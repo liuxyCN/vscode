@@ -238,11 +238,11 @@ app.on('ready', () => {
 		return {
 			product: {
 				version: '1.x.y',
-				nameShort: 'Code - OSS Dev',
-				nameLong: 'Code - OSS Dev',
-				applicationName: 'code-oss',
-				dataFolderName: '.vscode-oss',
-				urlProtocol: 'code-oss',
+				nameShort: 'NeonTractor Dev',
+				nameLong: 'NeonTractor Dev',
+				applicationName: 'NeonTractor',
+				dataFolderName: '.neon-tractor',
+				urlProtocol: 'neontractor',
 			}
 		};
 	});

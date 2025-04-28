@@ -1,7 +1,7 @@
 {
 	"nameShort": "NeonTractor",
 	"nameLong": "NeonTractor",
-	"applicationName": "Neon Tractor",
+	"applicationName": "NeonTractor",
 	"dataFolderName": ".neon-tractor",
 	"win32MutexName": "NeonTractor",
 	"licenseName": "MIT",
