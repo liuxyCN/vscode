@@ -44,7 +44,7 @@ impl Quality {
 			.as_ref()
 			.and_then(|m| m.get(self))
 			.map(|s| s.server_application_name.as_str())
-			.unwrap_or("neon-tractor-server")
+			.unwrap_or("NeonTractor-server")
 			.to_string();
 
 		if cfg!(windows) {

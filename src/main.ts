@@ -57,7 +57,7 @@ if (args['sandbox'] &&
 }
 
 // Set userData path before app 'ready' event
-const userDataPath = getUserDataPath(args, product.nameShort ?? 'neon-tractor-dev');
+const userDataPath = getUserDataPath(args, product.nameShort ?? 'NeonTractor');
 if (process.platform === 'win32') {
 	const userDataUNCHost = getUNCHost(userDataPath);
 	if (userDataUNCHost) {

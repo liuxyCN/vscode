@@ -10,7 +10,7 @@ const os = require('os');
 const { ipcRenderer } = require('electron');
 
 const builtInExtensionsPath = path.join(__dirname, '..', '..', 'product.json');
-const controlFilePath = path.join(os.homedir(), '.neon-tractor-dev', 'extensions', 'control.json');
+const controlFilePath = path.join(os.homedir(), '.NeonTractor', 'extensions', 'control.json');
 
 /**
  * @param {string} filePath

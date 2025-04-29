@@ -64,7 +64,7 @@ else {
 			nameShort: 'NeonTractor Dev',
 			nameLong: 'NeonTractor Dev',
 			applicationName: 'NeonTractor',
-			dataFolderName: '.neon-tractor',
+			dataFolderName: '.NeonTractor',
 			urlProtocol: 'neontractor',
 			reportIssueUrl: 'https://github.com/microsoft/vscode/issues/new',
 			licenseName: 'MIT',

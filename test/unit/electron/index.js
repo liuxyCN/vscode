@@ -238,10 +238,10 @@ app.on('ready', () => {
 		return {
 			product: {
 				version: '1.x.y',
-				nameShort: 'NeonTractor Dev',
-				nameLong: 'NeonTractor Dev',
+				nameShort: 'NeonTractor',
+				nameLong: 'NeonTractor',
 				applicationName: 'NeonTractor',
-				dataFolderName: '.neon-tractor',
+				dataFolderName: '.NeonTractor',
 				urlProtocol: 'neontractor',
 			}
 		};

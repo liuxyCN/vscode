@@ -1051,7 +1051,7 @@ export class NativeExtensionsScannerService extends AbstractExtensionsScannerSer
 		super(
 			systemExtensionsLocation,
 			userExtensionsLocation,
-			joinPath(userHome, '.neon-tractor-dev', 'extensions', 'control.json'),
+			joinPath(userHome, '.NeonTractor', 'extensions', 'control.json'),
 			currentProfile,
 			userDataProfilesService, extensionsProfileScannerService, fileService, logService, environmentService, productService, uriIdentityService, instantiationService);
 		this.translationsPromise = (async () => {
