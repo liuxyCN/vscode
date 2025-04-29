@@ -32,10 +32,10 @@ else if (globalThis._VSCODE_PRODUCT_JSON && globalThis._VSCODE_PACKAGE_JSON) {
 	// Running out of sources
 	if (env['VSCODE_DEV']) {
 		Object.assign(product, {
-			nameShort: `${product.nameShort} Dev`,
-			nameLong: `${product.nameLong} Dev`,
-			dataFolderName: `${product.dataFolderName}-dev`,
-			serverDataFolderName: product.serverDataFolderName ? `${product.serverDataFolderName}-dev` : undefined
+			nameShort: `${product.nameShort}`,
+			nameLong: `${product.nameLong}`,
+			dataFolderName: `${product.dataFolderName}`,
+			serverDataFolderName: product.serverDataFolderName ? `${product.serverDataFolderName}` : undefined
 		});
 	}
 
@@ -61,8 +61,8 @@ else {
 	if (Object.keys(product).length === 0) {
 		Object.assign(product, {
 			version: '1.95.0-dev',
-			nameShort: 'NeonTractor Dev',
-			nameLong: 'NeonTractor Dev',
+			nameShort: 'NeonTractor',
+			nameLong: 'NeonTractor',
 			applicationName: 'NeonTractor',
 			dataFolderName: '.NeonTractor',
 			urlProtocol: 'neontractor',
