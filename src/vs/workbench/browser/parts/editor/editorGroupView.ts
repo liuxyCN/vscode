@@ -51,7 +51,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { TelemetryTrustedValue } from '../../../../platform/telemetry/common/telemetryUtils.js';
 import { defaultProgressBarStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IBoundarySashes } from '../../../../base/browser/ui/sash/sash.js';
-import { EditorGroupWatermark } from './editorGroupWatermark.js';
+// import { EditorGroupWatermark } from './editorGroupWatermark.js';
 import { EditorTitleControl } from './editorTitleControl.js';
 import { EditorPane } from './editorPane.js';
 import { IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
@@ -191,7 +191,7 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 			this.createContainerContextMenu();
 
 			// Watermark & shortcuts
-			this._register(this.instantiationService.createInstance(EditorGroupWatermark, this.element));
+			// this._register(this.instantiationService.createInstance(EditorGroupWatermark, this.element));
 
 			// Progress bar
 			this.progressBar = this._register(new ProgressBar(this.element, defaultProgressBarStyles));
