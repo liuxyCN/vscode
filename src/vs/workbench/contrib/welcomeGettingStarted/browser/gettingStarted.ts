@@ -319,14 +319,6 @@ export class GettingStartedPage extends EditorPane {
 				JSON.stringify(restoreData),
 				StorageScope.PROFILE, StorageTarget.MACHINE);
 		}));
-
-		// set default theme
-		this.themeService.getColorThemes().then(themes => {
-			const theme = themes.find(theme => theme.settingsId === 'Neon City');
-			if (theme) {
-				this.themeService.setColorTheme(theme.id, ConfigurationTarget.USER);
-			}
-		});
 	}
 
 	// remove when 'workbench.welcomePage.preferReducedMotion' deprecated
