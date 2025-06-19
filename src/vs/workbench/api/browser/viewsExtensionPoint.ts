@@ -35,6 +35,7 @@ export interface IUserFriendlyViewsContainerDescriptor {
 	id: string;
 	title: string;
 	icon: string;
+	secondarybar?: boolean;
 }
 
 const viewsContainerSchema: IJSONSchema = {
@@ -301,6 +302,7 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 		const viewContainersRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
 		let activityBarOrder = CUSTOM_VIEWS_START_ORDER + viewContainersRegistry.all.filter(v => !!v.extensionId && viewContainersRegistry.getViewContainerLocation(v) === ViewContainerLocation.Sidebar).length;
 		let panelOrder = 5 + viewContainersRegistry.all.filter(v => !!v.extensionId && viewContainersRegistry.getViewContainerLocation(v) === ViewContainerLocation.Panel).length + 1;
+		let secondaryBarOrder = 1 + viewContainersRegistry.all.filter(v => !!v.extensionId && viewContainersRegistry.getViewContainerLocation(v) === ViewContainerLocation.AuxiliaryBar).length;
 		for (const { value, collector, description } of extensionPoints) {
 			Object.entries(value).forEach(([key, value]) => {
 				if (!this.isValidViewsContainer(value, collector)) {
@@ -308,7 +310,15 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 				}
 				switch (key) {
 					case 'activitybar':
-						activityBarOrder = this.registerCustomViewContainers(value, description, activityBarOrder, existingViewContainers, ViewContainerLocation.Sidebar);
+						const secondaryBarContainers = value.filter(container => container.secondarybar);
+						const activityBarContainers = value.filter(container => !container.secondarybar);
+
+						if (secondaryBarContainers.length) {
+							secondaryBarOrder = this.registerCustomViewContainers(secondaryBarContainers, description, secondaryBarOrder, existingViewContainers, ViewContainerLocation.AuxiliaryBar);
+						}
+						if (activityBarContainers.length) {
+							activityBarOrder = this.registerCustomViewContainers(activityBarContainers, description, activityBarOrder, existingViewContainers, ViewContainerLocation.Sidebar);
+						}
 						break;
 					case 'panel':
 						panelOrder = this.registerCustomViewContainers(value, description, panelOrder, existingViewContainers, ViewContainerLocation.Panel);
