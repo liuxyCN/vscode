@@ -7,6 +7,7 @@ import * as dom from '../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { PixelRatio } from '../../../../base/browser/pixelRatio.js';
 import { BreadcrumbsItem, BreadcrumbsWidget, IBreadcrumbsItemEvent, IBreadcrumbsWidgetStyles } from '../../../../base/browser/ui/breadcrumbs/breadcrumbsWidget.js';
+import { Radio } from '../../../../base/browser/ui/radio/radio.js';
 import { applyDragImage } from '../../../../base/browser/ui/dnd/dnd.js';
 import { IHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegate.js';
 import { IManagedHover } from '../../../../base/browser/ui/hover/hover.js';
@@ -51,7 +52,9 @@ import { BreadcrumbsConfig, IBreadcrumbsService } from './breadcrumbs.js';
 import { BreadcrumbsModel, FileElement, OutlineElement2 } from './breadcrumbsModel.js';
 import { BreadcrumbsFilePicker, BreadcrumbsOutlinePicker } from './breadcrumbsPicker.js';
 import { IEditorGroupView } from './editor.js';
-import { createEditorTypeActions, editorTypeDisplayLabel, getAvailableEditorTypes, IAvailableEditorTypes } from './editorTypePicker.js';
+import { createEditorTypeActions, editorTypeDisplayLabel, getAvailableEditorTypes, getEditorTypeButtonConfig, IAvailableEditorTypes, IEditorTypeButtonConfig } from './editorTypePicker.js';
+import { IEditorPreviewButtonsService } from './editorPreviewButtons.js';
+import { REOPEN_ACTIVE_EDITOR_WITH_COMMAND_ID } from './editorCommands.js';
 import './media/breadcrumbscontrol.css';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
@@ -272,6 +275,9 @@ export class BreadcrumbsControl {
 	private _editorTypeNode: HTMLDivElement | undefined;
 	private _editorTypeLabel: HTMLSpanElement | undefined;
 	private _editorTypeHover: IManagedHover | undefined;
+	private _editorTypeButtonsNode: HTMLDivElement | undefined;
+	private _editorTypeRadio: Radio | undefined;
+	private _editorTypeRadioLabels: { edit: string; preview: string } | undefined;
 	private _lastLayoutDimension: dom.Dimension | undefined;
 
 	private readonly _disposables = new DisposableStore();
@@ -303,7 +309,8 @@ export class BreadcrumbsControl {
 		@ILabelService private readonly _labelService: ILabelService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IHoverService private readonly _hoverService: IHoverService,
-		@IBreadcrumbsService breadcrumbsService: IBreadcrumbsService
+		@IBreadcrumbsService breadcrumbsService: IBreadcrumbsService,
+		@IEditorPreviewButtonsService private readonly _editorPreviewButtonsService: IEditorPreviewButtonsService
 	) {
 		this.domNode = document.createElement('div');
 		this.domNode.classList.add('breadcrumbs-control');
@@ -340,6 +347,7 @@ export class BreadcrumbsControl {
 					this._updateEditorTypeControl();
 				}
 			}));
+			this._disposables.add(this._editorPreviewButtonsService.onDidChange(() => this._updateEditorTypeControl()));
 		}
 
 		this._ckBreadcrumbsPossible = BreadcrumbsControl.CK_BreadcrumbsPossible.bindTo(this._contextKeyService);
@@ -379,10 +387,10 @@ export class BreadcrumbsControl {
 		if (dim) {
 			this._lastLayoutDimension = dim;
 		}
-		// When the editor type dropdown is visible it occupies space on the right, so shrink the
-		// breadcrumbs widget accordingly to avoid it rendering behind the dropdown.
-		if (dim && this._editorTypeNode) {
-			const editorTypeWidth = this._editorTypeNode.offsetWidth;
+		// breadcrumbs widget uses an explicit pixel width that reserves room for the control, re-run the
+		// layout so the widget shrinks/grows to match the new control width.
+		if (dim && this._getEditorTypeControlNode()) {
+			const editorTypeWidth = this._getEditorTypeControlWidth();
 			dim = new dom.Dimension(Math.max(0, dim.width - editorTypeWidth), dim.height);
 		}
 		this._widget.layout(dim);
@@ -521,24 +529,43 @@ export class BreadcrumbsControl {
 		return wasHidden !== this.isHidden();
 	}
 
+	private _getEditorTypeControlNode(): HTMLElement | undefined {
+		if (this._editorTypeButtonsNode && !this._editorTypeButtonsNode.classList.contains('hidden')) {
+			return this._editorTypeButtonsNode;
+		}
+		if (this._editorTypeNode && !this._editorTypeNode.classList.contains('hidden')) {
+			return this._editorTypeNode;
+		}
+		return undefined;
+	}
+
+	private _getEditorTypeControlWidth(): number {
+		return this._getEditorTypeControlNode()?.offsetWidth ?? 0;
+	}
+
 	private _updateEditorTypeControl(): void {
-		const previousWidth = this._editorTypeNode?.offsetWidth ?? 0;
+		const previousWidth = this._getEditorTypeControlWidth();
 
 		const available = (this._options.showEditorTypePicker && this._cfShowEditorType.getValue()) ? this._getAvailableEditorTypes() : undefined;
 		if (!available) {
 			this._hideEditorTypeControl();
 		} else {
-			const { label: editorTypeLabel, hover: editorTypeHover } = this._createEditorTypeControl();
-			const current = available.editors.find(editor => editor.id === available.currentId);
-			const label = current ? editorTypeDisplayLabel(current, available.isDiffEditor) : available.currentId;
-			editorTypeLabel.textContent = label;
-			editorTypeHover.update(localize('editorType.hover', "Editor: {0}", label));
+			const buttonConfig = getEditorTypeButtonConfig(available, this._editorPreviewButtonsService);
+			if (buttonConfig) {
+				this._hideEditorTypeDropdown();
+				this._showEditorTypeButtons(buttonConfig);
+			} else {
+				this._hideEditorTypeButtons();
+				const { label: editorTypeLabel, hover: editorTypeHover } = this._createEditorTypeDropdown();
+				this._editorTypeNode?.classList.remove('hidden');
+				const current = available.editors.find(editor => editor.id === available.currentId);
+				const label = current ? editorTypeDisplayLabel(current, available.isDiffEditor) : available.currentId;
+				editorTypeLabel.textContent = label;
+				editorTypeHover.update(localize('editorType.hover', "Editor: {0}", label));
+			}
 		}
 
-		// The dropdown width may have changed (different editor label or visibility toggled). Since the
-		// breadcrumbs widget uses an explicit pixel width that reserves room for the dropdown, re-run the
-		// layout so the widget shrinks/grows to match the new dropdown width.
-		const currentWidth = this._editorTypeNode?.offsetWidth ?? 0;
+		const currentWidth = this._getEditorTypeControlWidth();
 		if (this._lastLayoutDimension && currentWidth !== previousWidth) {
 			this.layout(this._lastLayoutDimension);
 		}
@@ -552,7 +579,7 @@ export class BreadcrumbsControl {
 		);
 	}
 
-	private _createEditorTypeControl(): { label: HTMLSpanElement; hover: IManagedHover } {
+	private _createEditorTypeDropdown(): { label: HTMLSpanElement; hover: IManagedHover } {
 		if (this._editorTypeNode && this._editorTypeLabel && this._editorTypeHover) {
 			return { label: this._editorTypeLabel, hover: this._editorTypeHover };
 		}
@@ -575,12 +602,73 @@ export class BreadcrumbsControl {
 		return { label: this._editorTypeLabel, hover: this._editorTypeHover };
 	}
 
+	private _showEditorTypeButtons(buttonConfig: IEditorTypeButtonConfig): void {
+		if (!this._editorTypeButtonsNode) {
+			this._editorTypeButtonsNode = document.createElement('div');
+			this._editorTypeButtonsNode.classList.add('breadcrumbs-editor-type-buttons', 'hidden');
+			dom.append(this.domNode, this._editorTypeButtonsNode);
+			this._editorTypeRadio = this._editorTypeDisposables.add(new Radio({
+				items: [
+					{ text: buttonConfig.editLabel, isActive: buttonConfig.currentId === buttonConfig.editEditorId },
+					{ text: buttonConfig.previewLabel, isActive: buttonConfig.currentId === buttonConfig.previewEditorId },
+				],
+			}));
+			this._editorTypeButtonsNode.appendChild(this._editorTypeRadio.domNode);
+			this._editorTypeRadioLabels = { edit: buttonConfig.editLabel, preview: buttonConfig.previewLabel };
+			this._editorTypeDisposables.add(this._editorTypeRadio.onDidSelect(index => {
+				const available = this._getAvailableEditorTypes();
+				const config = available ? getEditorTypeButtonConfig(available, this._editorPreviewButtonsService) : undefined;
+				if (!config) {
+					return;
+				}
+				const targetId = index === 0 ? config.editEditorId : config.previewEditorId;
+				if (config.currentId !== targetId) {
+					this._commandService.executeCommand(REOPEN_ACTIVE_EDITOR_WITH_COMMAND_ID, targetId);
+				}
+			}));
+		} else {
+			this._updateEditorTypeRadio(buttonConfig);
+		}
+
+		this._editorTypeButtonsNode.classList.remove('hidden');
+	}
+
+	private _updateEditorTypeRadio(buttonConfig: IEditorTypeButtonConfig): void {
+		if (!this._editorTypeRadio) {
+			return;
+		}
+		const editActive = buttonConfig.currentId === buttonConfig.editEditorId;
+		const labelsChanged = !this._editorTypeRadioLabels
+			|| this._editorTypeRadioLabels.edit !== buttonConfig.editLabel
+			|| this._editorTypeRadioLabels.preview !== buttonConfig.previewLabel;
+		if (labelsChanged) {
+			this._editorTypeRadio.setItems([
+				{ text: buttonConfig.editLabel, isActive: editActive },
+				{ text: buttonConfig.previewLabel, isActive: !editActive },
+			]);
+			this._editorTypeRadioLabels = { edit: buttonConfig.editLabel, preview: buttonConfig.previewLabel };
+		} else {
+			this._editorTypeRadio.setActiveItem(editActive ? 0 : 1);
+		}
+	}
+
+	private _hideEditorTypeDropdown(): void {
+		this._editorTypeNode?.classList.add('hidden');
+	}
+
+	private _hideEditorTypeButtons(): void {
+		this._editorTypeButtonsNode?.classList.add('hidden');
+	}
+
 	private _hideEditorTypeControl(): void {
 		this._editorTypeDisposables.clear();
 		this._editorTypeNode?.remove();
 		this._editorTypeNode = undefined;
 		this._editorTypeLabel = undefined;
 		this._editorTypeHover = undefined;
+		this._editorTypeButtonsNode = undefined;
+		this._editorTypeRadio = undefined;
+		this._editorTypeRadioLabels = undefined;
 	}
 
 	private _showEditorTypePicker(): void {

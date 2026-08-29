@@ -6,13 +6,41 @@
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { extUri } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
-import { localize } from '../../../../nls.js';
+import { localize, getNLSLanguage } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { DEFAULT_EDITOR_ASSOCIATION, EditorResourceAccessor, SideBySideEditor, isDiffEditorInput, isEditorInputWithDiffResources } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorResolverService, RegisteredEditorInfo } from '../../../services/editor/common/editorResolverService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { REOPEN_ACTIVE_EDITOR_WITH_COMMAND_ID } from './editorCommands.js';
+import { IEditorPreviewButtonsService } from './editorPreviewButtons.js';
+
+const editorTypeButtonLabels: Record<'edit' | 'preview', Record<string, string>> = {
+	edit: { en: 'Edit', 'zh-cn': '\u7F16\u8F91', 'zh-Hans': '\u7F16\u8F91' },
+	preview: { en: 'Preview', 'zh-cn': '\u9884\u89C8', 'zh-Hans': '\u9884\u89C8' },
+};
+
+function editorTypeButtonLabel(kind: keyof typeof editorTypeButtonLabels, fallback: string): string {
+	const language = getNLSLanguage();
+	if (language) {
+		const label = editorTypeButtonLabels[kind][language];
+		if (label) {
+			return label;
+		}
+	}
+	return fallback;
+}
+
+/**
+ * Fixed Edit/Preview button mapping for file types that use segmented controls in the breadcrumbs bar.
+ */
+export interface IEditorTypeButtonConfig {
+	readonly editEditorId: string;
+	readonly previewEditorId: string;
+	readonly currentId: string;
+	readonly editLabel: string;
+	readonly previewLabel: string;
+}
 
 /**
  * Describes the editors available for the active editor's resource, i.e. the different editor types
@@ -148,4 +176,35 @@ export function createEditorTypeActions(
 	}
 
 	return actions;
+}
+
+/**
+ * Returns Edit/Preview button config when an `editorPreviewButtons` contribution matches the
+ * resource and both the text editor and preview editor are available. Diff editors and
+ * ambiguous contributions keep the dropdown picker.
+ */
+export function getEditorTypeButtonConfig(available: IAvailableEditorTypes, editorPreviewButtonsService: IEditorPreviewButtonsService): IEditorTypeButtonConfig | undefined {
+	if (available.isDiffEditor) {
+		return undefined;
+	}
+
+	const previewMatch = editorPreviewButtonsService.getPreviewButtonMatch(available.resource);
+	const previewEditorId = previewMatch?.previewEditor;
+	if (!previewEditorId) {
+		return undefined;
+	}
+
+	const editEditorId = DEFAULT_EDITOR_ASSOCIATION.id;
+	const editorIds = new Set(available.editors.map(editor => editor.id));
+	if (!editorIds.has(editEditorId) || !editorIds.has(previewEditorId)) {
+		return undefined;
+	}
+
+	return {
+		editEditorId,
+		previewEditorId,
+		currentId: available.currentId,
+		editLabel: previewMatch.editLabel ?? editorTypeButtonLabel('edit', 'Edit'),
+		previewLabel: previewMatch.previewLabel ?? editorTypeButtonLabel('preview', 'Preview'),
+	};
 }

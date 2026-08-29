@@ -53,6 +53,29 @@
 	margin-left: 2px;
 }
 
+.monaco-workbench .breadcrumbs-control.with-editor-type > .breadcrumbs-editor-type-buttons {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: stretch;
+	padding: 0 4px;
+	margin: 0;
+}
+
+.monaco-workbench .breadcrumbs-control.with-editor-type > .breadcrumbs-editor-type-buttons.hidden {
+	display: none;
+}
+
+.monaco-workbench .breadcrumbs-control.with-editor-type > .breadcrumbs-editor-type-buttons .monaco-custom-radio > .monaco-button {
+	width: auto;
+	flex: 0 0 auto;
+	min-width: 5em;
+	padding-left: 1em;
+	padding-right: 1em;
+	white-space: nowrap;
+	line-height: 22px;
+	font-size: 11px;
+}
+
 .monaco-workbench .part.editor > .content .editor-group-container .breadcrumbs-control .monaco-breadcrumb-item.selected .monaco-icon-label,
 .monaco-workbench .part.editor > .content .editor-group-container .breadcrumbs-control .monaco-breadcrumb-item.focused .monaco-icon-label {
 	text-decoration-line: underline;

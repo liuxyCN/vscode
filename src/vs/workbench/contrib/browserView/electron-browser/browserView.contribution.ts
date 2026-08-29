@@ -13,6 +13,7 @@ import { BrowserEditorInput, BrowserEditorSerializer } from '../common/browserEd
 import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { IEditorResolverService, RegisteredEditorPriority } from '../../../services/editor/common/editorResolverService.js';
+import { IEditorPreviewButtonsService } from '../../../browser/parts/editor/editorPreviewButtons.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -69,6 +70,7 @@ class BrowserEditorResolverContribution implements IWorkbenchContribution {
 		@IEditorResolverService editorResolverService: IEditorResolverService,
 		@IBrowserViewWorkbenchService browserViewWorkbenchService: IBrowserViewWorkbenchService,
 		@ITelemetryService telemetryService: ITelemetryService,
+		@IEditorPreviewButtonsService editorPreviewButtonsService: IEditorPreviewButtonsService,
 	) {
 		editorResolverService.registerEditor(
 			`${Schemas.vscodeBrowser}:/**`,
@@ -143,6 +145,13 @@ class BrowserEditorResolverContribution implements IWorkbenchContribution {
 					}
 				}
 			);
+		}
+
+		for (const extension of ['html', 'htm']) {
+			editorPreviewButtonsService.register({
+				filenamePattern: `*.${extension}`,
+				previewEditor: BrowserEditorInput.EDITOR_ID,
+			});
 		}
 	}
 }

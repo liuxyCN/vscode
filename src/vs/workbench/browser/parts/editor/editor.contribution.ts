@@ -15,6 +15,7 @@ import {
 	IsSessionsWindowContext, ActiveCustomEditorDiffCanToggleLayoutContext, ActiveCustomEditorTextDiffContext, EditorPartModalContext
 } from '../../../common/contextkeys.js';
 import { SideBySideEditorInput, SideBySideEditorInputSerializer } from '../../../common/editor/sideBySideEditorInput.js';
+import './editorPreviewButtons.js';
 import { TextResourceEditor } from './textResourceEditor.js';
 import { SideBySideEditor } from './sideBySideEditor.js';
 import { DiffEditorInput, DiffEditorInputSerializer } from '../../../common/editor/diffEditorInput.js';
