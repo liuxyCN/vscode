@@ -568,6 +568,10 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			result = es.merge(result, gulp.src('.build/policies/win32/**', { base: '.build/policies/win32' })
 				.pipe(rename(f => f.dirname = `policies/${f.dirname}`)));
 
+			// Bundled VSIX files for first-launch install (see DefaultExtensionsInitializer)
+			result = es.merge(result, gulp.src('resources/bundled-vsix/**/*.vsix', { base: 'resources/bundled-vsix', allowEmpty: true })
+				.pipe(rename(f => { f.dirname = 'bootstrap/extensions'; })));
+
 			if (quality === 'stable' || quality === 'insider') {
 				result = es.merge(result, gulp.src('.build/win32/appx/**', { base: '.build/win32' }));
 				const rawVersion = version.replace(/-\w+$/, '').split('.');

@@ -258,7 +258,7 @@ app.on('ready', () => {
 				nameLong: 'Code - OSS Dev',
 				applicationName: 'code-oss',
 				dataFolderName: '.vscode-oss',
-				urlProtocol: 'code-oss',
+				urlProtocol: 'neontractor',
 			}
 		};
 	});

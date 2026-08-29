@@ -77,13 +77,13 @@ else {
 	// Running out of sources
 	if (Object.keys(product).length === 0) {
 		Object.assign(product, {
-			version: '1.104.0-dev',
-			nameShort: 'Code - OSS Dev',
-			nameLong: 'Code - OSS Dev',
-			applicationName: 'code-oss',
-			dataFolderName: '.vscode-oss',
-			urlProtocol: 'code-oss',
-			reportIssueUrl: 'https://github.com/microsoft/vscode/issues/new',
+			version: '1.135.0-dev',
+			nameShort: 'NeonTractor',
+			nameLong: 'NeonTractor',
+			applicationName: 'NeonTractor',
+			dataFolderName: '.NeonTractor',
+			urlProtocol: 'neontractor',
+			reportIssueUrl: 'https://github.com/liuxyCN/vscode/issues/new',
 			licenseName: 'MIT',
 			licenseUrl: 'https://github.com/microsoft/vscode/blob/main/LICENSE.txt',
 			serverLicenseUrl: 'https://github.com/microsoft/vscode/blob/main/LICENSE.txt',

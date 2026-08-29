@@ -92,7 +92,8 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 	const productJson = es.through(function (file: VinylFile) {
 		const product = JSON.parse(file.contents!.toString('utf8'));
 
-		if (product.extensionsGallery) {
+		const galleryUrl: string | undefined = product.extensionsGallery?.serviceUrl;
+		if (product.extensionsGallery && !galleryUrl?.includes('open-vsx.org')) {
 			console.error(`product.json: Contains 'extensionsGallery'`);
 			errorCount++;
 		}
