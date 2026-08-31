@@ -60,6 +60,12 @@
 	display: block;
 }
 
+.monaco-workbench .part.editor > .content .gettingStartedContainer .subtitle-spacer {
+	margin-top: .6em;
+	min-height: 2em;
+	display: block;
+}
+
 .monaco-workbench.hc-black .part.editor > .content .gettingStartedContainer .subtitle,
 .monaco-workbench.hc-light .part.editor > .content .gettingStartedContainer .subtitle {
 	font-weight: 200;
@@ -167,6 +173,65 @@
 
 .monaco-workbench .part.editor > .content .gettingStartedContainer .gettingStartedSlideCategories > .gettingStartedCategoriesContainer > .categories-column-right {
 	grid-area: right-column;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .gettingStartedSlideCategories > .gettingStartedCategoriesContainer > .categories-column-right {
+	overflow: visible;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-column {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 280px;
+	overflow: visible;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 75%;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-card {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	width: 100%;
+	padding: 0;
+	border: 1px solid var(--vscode-widget-border, transparent);
+	border-radius: 6px;
+	background: var(--vscode-editor-background);
+	cursor: pointer;
+	overflow: hidden;
+	font-family: inherit;
+	text-align: center;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-card:hover {
+	border-color: var(--vscode-focusBorder);
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-card.selected {
+	border: 2px solid var(--vscode-focusBorder);
+	outline: none;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-preview {
+	line-height: 0;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-preview img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer.themePickerOnly .theme-picker-label {
+	padding: 6px 8px;
+	font-size: var(--vscode-bodyFontSize);
+	color: var(--vscode-foreground);
 }
 
 .monaco-workbench .part.editor > .content .gettingStartedContainer .gettingStartedSlideCategories > .gettingStartedCategoriesContainer > .header {

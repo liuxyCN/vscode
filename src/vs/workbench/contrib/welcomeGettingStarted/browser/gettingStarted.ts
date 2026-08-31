@@ -21,7 +21,7 @@ import { splitRecentLabel } from '../../../../base/common/labels.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ILink, LinkedText } from '../../../../base/common/linkedText.js';
 import { parse } from '../../../../base/common/marshalling.js';
-import { Schemas, matchesScheme } from '../../../../base/common/network.js';
+import { FileAccess, Schemas, matchesScheme, type AppResourcePath } from '../../../../base/common/network.js';
 import { OS } from '../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
@@ -164,7 +164,7 @@ export class GettingStartedPage extends EditorPane {
 	private detailsRenderer: GettingStartedDetailsRenderer;
 
 	private readonly categoriesSlideDisposables: DisposableStore;
-	private showFeaturedWalkthrough = true;
+	private showFeaturedWalkthrough = false;
 
 	get editorInput(): GettingStartedInput | undefined {
 		return this._input as GettingStartedInput | undefined;
@@ -925,7 +925,7 @@ export class GettingStartedPage extends EditorPane {
 
 		const header = $('.header', {},
 			$('h1.product-name.caption', {}, this.productService.nameLong),
-			$('p.subtitle.description', {}, localize({ key: 'gettingStarted.editingEvolved', comment: ['Shown as subtitle on the Welcome page.'] }, "Editing evolved"))
+			$('div.subtitle-spacer', {}),
 		);
 
 		const leftColumn = $('.categories-column.categories-column-left', {},);
@@ -934,6 +934,7 @@ export class GettingStartedPage extends EditorPane {
 		const startList = this.buildStartList();
 		const recentList = this.buildRecentlyOpenedList();
 		const gettingStartedList = this.buildGettingStartedWalkthroughsList();
+		const themePickerColumn = this.buildThemePickerColumn();
 
 		const footerChildren: HTMLElement[] = [];
 		if (canShowAgentsBanner(this.chatEntitlementService)) {
@@ -955,32 +956,14 @@ export class GettingStartedPage extends EditorPane {
 
 		const footer = $('.footer', {}, ...footerChildren);
 
-		const layoutLists = () => {
-			if (gettingStartedList.itemCount) {
-				this.container.classList.remove('noWalkthroughs');
-				reset(rightColumn, gettingStartedList.getDomElement());
-			}
-			else {
-				this.container.classList.add('noWalkthroughs');
-				reset(rightColumn);
-			}
-			setTimeout(() => this.categoriesPageScrollbar?.scanDomNode(), 50);
-			layoutRecentList();
-		};
+		// Keep walkthrough list logic for NLS stability; hide via .noWalkthroughs CSS.
+		this.container.classList.add('noWalkthroughs', 'themePickerOnly');
+		recentList.setLimit(5);
+		reset(leftColumn, startList.getDomElement(), recentList.getDomElement());
+		reset(rightColumn, themePickerColumn);
+		setTimeout(() => this.categoriesPageScrollbar?.scanDomNode(), 50);
 
-		const layoutRecentList = () => {
-			if (this.container.classList.contains('noWalkthroughs')) {
-				recentList.setLimit(10);
-				reset(leftColumn, startList.getDomElement());
-				reset(rightColumn, recentList.getDomElement());
-			} else {
-				recentList.setLimit(5);
-				reset(leftColumn, startList.getDomElement(), recentList.getDomElement());
-			}
-		};
-
-		gettingStartedList.onDidChange(layoutLists);
-		layoutLists();
+		gettingStartedList.onDidChange(() => this.registerDispatchListeners());
 
 		reset(this.categoriesSlide, $('.gettingStartedCategoriesContainer', {}, header, leftColumn, rightColumn, footer,));
 		this.categoriesPageScrollbar?.scanDomNode();
@@ -1175,6 +1158,75 @@ export class GettingStartedPage extends EditorPane {
 		return startList;
 	}
 
+	private buildThemePickerColumn(): HTMLElement {
+		const welcomeThemes: { label: string; themeId: string; previewPath: AppResourcePath }[] = [
+			{
+				label: 'NeonTractor',
+				themeId: 'NeonTractor',
+				previewPath: 'vs/workbench/contrib/welcomeGettingStarted/common/media/theme-preview-neon-tractor.svg',
+			},
+			{
+				label: 'Dark 2026',
+				themeId: 'Dark 2026',
+				previewPath: 'vs/workbench/contrib/welcomeOnboarding/browser/media/theme-preview-dark-2026.svg',
+			},
+			{
+				label: 'Light 2026',
+				themeId: 'Light 2026',
+				previewPath: 'vs/workbench/contrib/welcomeOnboarding/browser/media/theme-preview-light-2026.svg',
+			},
+		];
+
+		const container = $('.theme-picker-column');
+		const grid = append(container, $('.theme-picker-grid'));
+		grid.setAttribute('role', 'radiogroup');
+
+		const currentThemeId = this.themeService.getColorTheme().settingsId;
+		const cards: HTMLElement[] = [];
+
+		const updateSelection = (selectedThemeId: string) => {
+			for (const card of cards) {
+				const isSelected = card.getAttribute('data-theme-id') === selectedThemeId;
+				card.classList.toggle('selected', isSelected);
+				card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+			}
+		};
+
+		for (const theme of welcomeThemes) {
+			const card = append(grid, $('button.theme-picker-card'));
+			card.setAttribute('type', 'button');
+			card.setAttribute('role', 'radio');
+			card.setAttribute('data-theme-id', theme.themeId);
+			card.setAttribute('aria-label', theme.label);
+			card.setAttribute('aria-checked', theme.themeId === currentThemeId ? 'true' : 'false');
+			if (theme.themeId === currentThemeId) {
+				card.classList.add('selected');
+			}
+			cards.push(card);
+
+			const preview = append(card, $('div.theme-picker-preview'));
+			const img = append(preview, $<HTMLImageElement>('img'));
+			img.alt = '';
+			img.src = FileAccess.asBrowserUri(theme.previewPath).toString(true);
+
+			append(card, $('div.theme-picker-label', {}, theme.label));
+
+			this.categoriesSlideDisposables.add(addDisposableListener(card, 'click', async () => {
+				const match = (await this.themeService.getColorThemes()).find(t => t.settingsId === theme.themeId);
+				if (match) {
+					this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
+					updateSelection(theme.themeId);
+				}
+			}));
+		}
+
+		this.categoriesSlideDisposables.add(this.themeService.onDidColorThemeChange(() => {
+			updateSelection(this.themeService.getColorTheme().settingsId);
+		}));
+
+		return container;
+	}
+
 	private buildGettingStartedWalkthroughsList(): GettingStartedIndexList<IResolvedWalkthrough> {
 
 		const renderGetttingStaredWalkthrough = (category: IResolvedWalkthrough): HTMLElement => {
@@ -1221,8 +1273,6 @@ export class GettingStartedPage extends EditorPane {
 					$('.progress-bar-outer', { 'role': 'progressbar' },
 						$('.progress-bar-inner'))));
 		};
-
-
 
 		const rankWalkthrough = (e: IResolvedWalkthrough) => {
 			let rank: number | null = e.order;
