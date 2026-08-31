@@ -26,6 +26,12 @@
         "path": "./themes/2026-dark.json"
       },
       {
+        "id": "NeonTractor",
+        "label": "%neonTractorThemeLabel%",
+        "uiTheme": "vs-dark",
+        "path": "./themes/neon-tractor.json"
+      },
+      {
         "id": "Dark+",
         "label": "%darkPlusColorThemeLabel%",
         "uiTheme": "vs-dark",

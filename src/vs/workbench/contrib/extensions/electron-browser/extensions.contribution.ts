@@ -26,6 +26,7 @@ import { ExtensionsAutoProfiler } from './extensionsAutoProfiler.js';
 import { InstallRemoteExtensionsContribution, RemoteExtensionsInitializerContribution } from './remoteExtensionsInit.js';
 import { IExtensionHostProfileService, OpenExtensionHostProfileACtion, RuntimeExtensionsEditor, SaveExtensionHostProfileAction, StartExtensionHostProfileAction, StopExtensionHostProfileAction } from './runtimeExtensionsEditor.js';
 import { ShowRuntimeExtensionsAction } from '../browser/abstractRuntimeExtensionsEditor.js';
+import './bundledVsixInstall.contribution.js';
 
 // Singletons
 registerSingleton(IExtensionHostProfileService, ExtensionHostProfileService, InstantiationType.Delayed);
