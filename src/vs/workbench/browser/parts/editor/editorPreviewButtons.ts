@@ -31,10 +31,10 @@ export interface IEditorPreviewButtonsService {
 	readonly onDidChange: Event<void>;
 
 	/**
-	 * Returns the preview button contribution for the resource, or `undefined` when no
-	 * unambiguous `editorPreviewButtons` contribution matches.
+	 * Returns all `editorPreviewButtons` contributions matching the resource, highest
+	 * priority (most recently registered) first.
 	 */
-	getPreviewButtonMatch(resource: URI): IEditorPreviewButtonMatch | undefined;
+	getPreviewButtonMatches(resource: URI): readonly IEditorPreviewButtonMatch[];
 
 	/**
 	 * Registers a preview button mapping from workbench code (for built-in editors that are
@@ -119,33 +119,18 @@ class EditorPreviewButtonsService extends Disposable implements IEditorPreviewBu
 		});
 	}
 
-	getPreviewButtonMatch(resource: URI): IEditorPreviewButtonMatch | undefined {
-		const match = this.getMatchingContribution(resource);
-		if (!match) {
-			return undefined;
-		}
-		return {
+	getPreviewButtonMatches(resource: URI): readonly IEditorPreviewButtonMatch[] {
+		return this.getMatchingContributions(resource).map(match => ({
 			previewEditor: match.previewEditor,
 			editLabel: match.editLabel,
 			previewLabel: match.previewLabel,
-		};
+		}));
 	}
 
-	private getMatchingContribution(resource: URI): IRegisteredEditorPreviewButton | undefined {
-		const matches = [...this._extensionContributions, ...this._workbenchContributions]
+	private getMatchingContributions(resource: URI): IRegisteredEditorPreviewButton[] {
+		return [...this._extensionContributions, ...this._workbenchContributions]
 			.filter(contribution => globMatchesResource(contribution.filenamePattern, resource))
 			.sort((a, b) => b.order - a.order);
-
-		if (matches.length === 0) {
-			return undefined;
-		}
-
-		const previewEditorIds = new Set(matches.map(match => match.previewEditor));
-		if (previewEditorIds.size !== 1) {
-			return undefined;
-		}
-
-		return matches[0];
 	}
 
 	private updateExtensionContributions(extensions: readonly IExtensionPointUser<IEditorPreviewButtonContribution[]>[]): void {

@@ -37,6 +37,7 @@ function editorTypeButtonLabel(kind: keyof typeof editorTypeButtonLabels, fallba
 export interface IEditorTypeButtonConfig {
 	readonly editEditorId: string;
 	readonly previewEditorId: string;
+	readonly previewEditorIds: readonly string[];
 	readonly currentId: string;
 	readonly editLabel: string;
 	readonly previewLabel: string;
@@ -180,31 +181,39 @@ export function createEditorTypeActions(
 
 /**
  * Returns Edit/Preview button config when an `editorPreviewButtons` contribution matches the
- * resource and both the text editor and preview editor are available. Diff editors and
- * ambiguous contributions keep the dropdown picker.
+ * resource and both the text editor and at least one contributed preview editor are available.
  */
 export function getEditorTypeButtonConfig(available: IAvailableEditorTypes, editorPreviewButtonsService: IEditorPreviewButtonsService): IEditorTypeButtonConfig | undefined {
 	if (available.isDiffEditor) {
 		return undefined;
 	}
 
-	const previewMatch = editorPreviewButtonsService.getPreviewButtonMatch(available.resource);
-	const previewEditorId = previewMatch?.previewEditor;
-	if (!previewEditorId) {
+	const matches = editorPreviewButtonsService.getPreviewButtonMatches(available.resource);
+	if (matches.length === 0) {
 		return undefined;
 	}
 
 	const editEditorId = DEFAULT_EDITOR_ASSOCIATION.id;
 	const editorIds = new Set(available.editors.map(editor => editor.id));
-	if (!editorIds.has(editEditorId) || !editorIds.has(previewEditorId)) {
+	if (!editorIds.has(editEditorId)) {
 		return undefined;
 	}
 
+	const availableMatches = matches.filter(match => editorIds.has(match.previewEditor));
+	if (availableMatches.length === 0) {
+		return undefined;
+	}
+
+	const previewEditorIds = availableMatches.map(match => match.previewEditor);
+	const activePreviewMatch = availableMatches.find(match => match.previewEditor === available.currentId);
+	const primaryPreviewMatch = activePreviewMatch ?? availableMatches[0];
+
 	return {
 		editEditorId,
-		previewEditorId,
+		previewEditorId: primaryPreviewMatch.previewEditor,
+		previewEditorIds,
 		currentId: available.currentId,
-		editLabel: previewMatch.editLabel ?? editorTypeButtonLabel('edit', 'Edit'),
-		previewLabel: previewMatch.previewLabel ?? editorTypeButtonLabel('preview', 'Preview'),
+		editLabel: primaryPreviewMatch.editLabel ?? editorTypeButtonLabel('edit', 'Edit'),
+		previewLabel: primaryPreviewMatch.previewLabel ?? editorTypeButtonLabel('preview', 'Preview'),
 	};
 }

@@ -610,7 +610,7 @@ export class BreadcrumbsControl {
 			this._editorTypeRadio = this._editorTypeDisposables.add(new Radio({
 				items: [
 					{ text: buttonConfig.editLabel, isActive: buttonConfig.currentId === buttonConfig.editEditorId },
-					{ text: buttonConfig.previewLabel, isActive: buttonConfig.currentId === buttonConfig.previewEditorId },
+					{ text: buttonConfig.previewLabel, isActive: buttonConfig.previewEditorIds.includes(buttonConfig.currentId) },
 				],
 			}));
 			this._editorTypeButtonsNode.appendChild(this._editorTypeRadio.domNode);
@@ -638,13 +638,14 @@ export class BreadcrumbsControl {
 			return;
 		}
 		const editActive = buttonConfig.currentId === buttonConfig.editEditorId;
+		const previewActive = buttonConfig.previewEditorIds.includes(buttonConfig.currentId);
 		const labelsChanged = !this._editorTypeRadioLabels
 			|| this._editorTypeRadioLabels.edit !== buttonConfig.editLabel
 			|| this._editorTypeRadioLabels.preview !== buttonConfig.previewLabel;
 		if (labelsChanged) {
 			this._editorTypeRadio.setItems([
 				{ text: buttonConfig.editLabel, isActive: editActive },
-				{ text: buttonConfig.previewLabel, isActive: !editActive },
+				{ text: buttonConfig.previewLabel, isActive: previewActive },
 			]);
 			this._editorTypeRadioLabels = { edit: buttonConfig.editLabel, preview: buttonConfig.previewLabel };
 		} else {
