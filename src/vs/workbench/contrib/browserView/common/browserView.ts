@@ -385,6 +385,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly canZoomOut: boolean;
 	readonly elementSelectionState: IBrowserElementSelectionState;
 	readonly isAreaSelectionActive: boolean;
+	readonly isEditModeActive: boolean;
 	readonly device: IBrowserDeviceProfile | undefined;
 
 	readonly onDidChangeSharingState: Event<BrowserViewSharingState>;
@@ -406,6 +407,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly onDidChangeElementSelectionState: Event<IBrowserElementSelectionState>;
 	readonly onDidPickArea: Event<IBrowserViewRect | undefined>;
 	readonly onDidChangeAreaSelectionActive: Event<boolean>;
+	readonly onDidChangeEditModeActive: Event<boolean>;
 	readonly onDidChangeDevice: Event<IBrowserDeviceProfile | undefined>;
 	readonly onDidChangeRemoteStatus: Event<boolean>;
 	readonly onDidRequestPermission: Event<IBrowserViewPermissionRequestEvent>;
@@ -436,6 +438,7 @@ export interface IBrowserViewModel extends IDisposable {
 	toggleElementSelection(enabled?: boolean, options?: IBrowserElementSelectionOptions): Promise<void>;
 	setElementComments(update: IBrowserElementCommentsUpdate): Promise<void>;
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
+	toggleEditMode(enabled?: boolean): Promise<void>;
 	setDevice(device: IBrowserDeviceProfile | undefined): Promise<void>;
 }
 
@@ -460,6 +463,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	private _browserZoomIndex: number = browserZoomDefaultIndex;
 	private _elementSelectionState: IBrowserElementSelectionState = { active: false, options: {} };
 	private _isAreaSelectionActive: boolean = false;
+	private _isEditModeActive: boolean = false;
 	private _device: IBrowserDeviceProfile | undefined;
 
 	readonly history = this._register(new BrowserHistoryStore());
@@ -514,6 +518,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		this._browserZoomIndex = initialState.browserZoomIndex;
 		this._elementSelectionState = initialState.elementSelectionState;
 		this._isAreaSelectionActive = initialState.isAreaSelectionActive;
+		this._isEditModeActive = initialState.isEditModeActive;
 		this._device = initialState.device;
 		this._sharedWithAgent = initialState.audiences.some(audience => audience.type === 'agent');
 		this._isEphemeral = this._storageScope === BrowserViewStorageScope.Ephemeral;
@@ -623,6 +628,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 			this._isAreaSelectionActive = active;
 		}));
 
+		this._register(this.onDidChangeEditModeActive(active => {
+			this._isEditModeActive = active;
+		}));
+
 		this._register(this.browserViewService.onDynamicDidChangeAudiences(this.id)(audiences => {
 			this._setSharedWithAgent(audiences.some(audience => audience.type === 'agent'));
 		}));
@@ -661,6 +670,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	get canZoomOut(): boolean { return this._browserZoomIndex > 0; }
 	get elementSelectionState(): IBrowserElementSelectionState { return this._elementSelectionState; }
 	get isAreaSelectionActive(): boolean { return this._isAreaSelectionActive; }
+	get isEditModeActive(): boolean { return this._isEditModeActive; }
 	get device(): IBrowserDeviceProfile | undefined { return this._device; }
 
 	get onDidNavigate(): Event<IBrowserViewNavigationEvent> {
@@ -874,6 +884,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.toggleAreaSelection(this.id, enabled);
 	}
 
+	async toggleEditMode(enabled?: boolean): Promise<void> {
+		return this.browserViewService.toggleEditMode(this.id, enabled);
+	}
+
 	get onDidSelectElement(): Event<IElementData> {
 		return this.browserViewService.onDynamicDidSelectElement(this.id);
 	}
@@ -892,6 +906,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	get onDidChangeAreaSelectionActive(): Event<boolean> {
 		return this.browserViewService.onDynamicDidChangeAreaSelectionActive(this.id);
+	}
+
+	get onDidChangeEditModeActive(): Event<boolean> {
+		return this.browserViewService.onDynamicDidChangeEditModeActive(this.id);
 	}
 
 	async setDevice(device: IBrowserDeviceProfile | undefined): Promise<void> {

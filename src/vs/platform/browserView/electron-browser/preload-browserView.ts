@@ -255,10 +255,36 @@ function init() {
 	// the CDP target session (discoverable via Runtime.evaluate in the main world).
 	const frameToken = `frame-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+	let editModeActive = false;
+	let editModeClickHandler: ((event: Event) => void) | undefined;
+
 	const mainWorldHelpers = {
 		getElement,
 		/** Opaque token exposed for CDP-side frame matching. */
-		getFrameToken(): string { return frameToken; }
+		getFrameToken(): string { return frameToken; },
+		startEditMode(): void {
+			if (editModeActive) {
+				return;
+			}
+			editModeActive = true;
+			document.body.setAttribute('contenteditable', 'true');
+			editModeClickHandler = (event: Event) => {
+				event.stopPropagation();
+				event.preventDefault();
+			};
+			document.addEventListener('click', editModeClickHandler, true);
+		},
+		stopEditMode(): void {
+			if (!editModeActive) {
+				return;
+			}
+			editModeActive = false;
+			document.body.removeAttribute('contenteditable');
+			if (editModeClickHandler) {
+				document.removeEventListener('click', editModeClickHandler, true);
+				editModeClickHandler = undefined;
+			}
+		},
 	};
 
 	try {

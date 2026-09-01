@@ -59,6 +59,9 @@ export enum BrowserViewCommandId {
 	ClearWorkspaceStorage = `${commandPrefix}.clearWorkspaceStorage`,
 	ClearEphemeralStorage = `${commandPrefix}.clearEphemeralStorage`,
 
+	// Page edit
+	ToggleEditMode = `${commandPrefix}.toggleEditMode`,
+
 	// Find in page
 	ShowFind = `${commandPrefix}.showFind`,
 	HideFind = `${commandPrefix}.hideFind`,
@@ -336,6 +339,7 @@ export interface IBrowserViewState {
 	elementSelectionState: IBrowserElementSelectionState;
 	isRemoteSession: boolean;
 	isAreaSelectionActive: boolean;
+	isEditModeActive: boolean;
 	device: IBrowserDeviceProfile | undefined;
 	audiences: IBrowserViewAudience[];
 }
@@ -512,6 +516,7 @@ export interface IBrowserViewService {
 	onDynamicDidChangeElementSelectionState(id: string): Event<IBrowserElementSelectionState>;
 	onDynamicDidPickArea(id: string): Event<IBrowserViewRect | undefined>;
 	onDynamicDidChangeAreaSelectionActive(id: string): Event<boolean>;
+	onDynamicDidChangeEditModeActive(id: string): Event<boolean>;
 	onDynamicDidChangeDeviceEmulation(id: string): Event<IBrowserDeviceProfile | undefined>;
 	onDynamicDidChangeRemoteStatus(id: string): Event<boolean>;
 	onDynamicDidChangeAudiences(id: string): Event<IBrowserViewAudience[]>;
@@ -763,6 +768,15 @@ export interface IBrowserViewService {
 	 * @param enabled Whether to enable or disable. Omit to toggle.
 	 */
 	toggleAreaSelection(id: string, enabled?: boolean): Promise<void>;
+
+	/**
+	 * Toggle in-page text edit mode in a browser view.
+	 * State changes are delivered via {@link onDynamicDidChangeEditModeActive}.
+	 *
+	 * @param id The browser view identifier
+	 * @param enabled Whether to enable or disable. Omit to toggle.
+	 */
+	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
 
 	/**
 	 * Replace the calling window's configuration for the browser views it owns.

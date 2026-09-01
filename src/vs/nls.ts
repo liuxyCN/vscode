@@ -242,3 +242,27 @@ export interface ILanguagePack {
 }
 
 export type ILanguagePacks = Record<string, ILanguagePack | undefined>;
+
+export type MiniI18nTable<T extends string> = Record<T, Record<string, string>>;
+
+/**
+ * Resolves a label from a feature-local translation table using {@link getNLSLanguage},
+ * without registering keys in the global NLS index.
+ */
+export function miniLabel<T extends string>(table: MiniI18nTable<T>, key: T, fallback: string): string {
+	const language = getNLSLanguage();
+	if (language) {
+		const label = table[key]?.[language];
+		if (label) {
+			return label;
+		}
+	}
+	return fallback;
+}
+
+/**
+ * Builds an {@link ILocalizedString} suitable for Action2 titles (including `f1: true`).
+ */
+export function miniActionTitle<T extends string>(table: MiniI18nTable<T>, key: T, fallback: string): ILocalizedString {
+	return { value: miniLabel(table, key, fallback), original: fallback };
+}

@@ -205,6 +205,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.onDidChangeAreaSelectionActive;
 	}
 
+	onDynamicDidChangeEditModeActive(id: string) {
+		return this._getBrowserView(id).inspector.onDidChangeEditModeActive;
+	}
+
 	onDynamicDidChangeDeviceEmulation(id: string) {
 		return this._getBrowserView(id).emulator.onDidChange;
 	}
@@ -359,6 +363,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	async toggleAreaSelection(id: string, enabled?: boolean): Promise<void> {
 		return this._getBrowserView(id).inspector.toggleAreaSelection(enabled);
+	}
+
+	async toggleEditMode(id: string, enabled?: boolean): Promise<void> {
+		return this._getBrowserView(id).inspector.toggleEditMode(enabled);
 	}
 
 	async updateWindowConfiguration(windowId: number, config: IBrowserViewWindowConfiguration): Promise<void> {

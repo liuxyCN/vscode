@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../../../nls.js';
+import { browserViewActionTitle } from '../../common/browserViewI18n.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor, IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -396,7 +397,7 @@ class NewTabAction extends Action2 {
 	constructor() {
 		super({
 			id: BrowserViewCommandId.NewTab,
-			title: localize2('browser.newTabAction', "New Tab"),
+			title: browserViewActionTitle('newTab', 'New Tab'),
 			category: BrowserActionCategory,
 			icon: Codicon.add,
 			f1: true,
@@ -405,7 +406,6 @@ class NewTabAction extends Action2 {
 				id: MenuId.BrowserActionsToolbar,
 				group: BrowserActionGroup.Tabs,
 				order: 1,
-				isHiddenByDefault: true,
 			},
 			// When already in a browser, Ctrl/Cmd + T opens a new tab
 			keybinding: {
@@ -534,7 +534,7 @@ MenuRegistry.appendMenuItem(MenuId.EditorTitleContext, { command: { id: BrowserV
 MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
 	command: {
 		id: BrowserViewCommandId.NewTab,
-		title: localize2('browser.newTabAction', "New Tab"),
+		title: browserViewActionTitle('newTab', 'New Tab'),
 		icon: Codicon.add
 	},
 	group: 'navigation',

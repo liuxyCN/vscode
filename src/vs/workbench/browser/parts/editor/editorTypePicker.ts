@@ -6,7 +6,7 @@
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { extUri } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
-import { localize, getNLSLanguage } from '../../../../nls.js';
+import { localize, miniLabel, MiniI18nTable } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { DEFAULT_EDITOR_ASSOCIATION, EditorResourceAccessor, SideBySideEditor, isDiffEditorInput, isEditorInputWithDiffResources } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
@@ -15,20 +15,13 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { REOPEN_ACTIVE_EDITOR_WITH_COMMAND_ID } from './editorCommands.js';
 import { IEditorPreviewButtonsService } from './editorPreviewButtons.js';
 
-const editorTypeButtonLabels: Record<'edit' | 'preview', Record<string, string>> = {
+const editorTypeButtonLabels: MiniI18nTable<'edit' | 'preview'> = {
 	edit: { en: 'Edit', 'zh-cn': '\u7F16\u8F91', 'zh-Hans': '\u7F16\u8F91' },
 	preview: { en: 'Preview', 'zh-cn': '\u9884\u89C8', 'zh-Hans': '\u9884\u89C8' },
 };
 
 function editorTypeButtonLabel(kind: keyof typeof editorTypeButtonLabels, fallback: string): string {
-	const language = getNLSLanguage();
-	if (language) {
-		const label = editorTypeButtonLabels[kind][language];
-		if (label) {
-			return label;
-		}
-	}
-	return fallback;
+	return miniLabel(editorTypeButtonLabels, kind, fallback);
 }
 
 /**

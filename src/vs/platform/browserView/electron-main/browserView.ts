@@ -622,6 +622,7 @@ export class BrowserView extends Disposable {
 			elementSelectionState: this.inspector.elementSelectionState,
 			isRemoteSession: this.session.remote.isRemote,
 			isAreaSelectionActive: this.inspector.isAreaSelectionActive,
+			isEditModeActive: this.inspector.isEditModeActive,
 			device: this.emulator.device,
 			audiences: [...this._audiences]
 		};
