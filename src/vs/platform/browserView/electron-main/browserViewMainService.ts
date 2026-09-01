@@ -209,6 +209,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.onDidChangeEditModeActive;
 	}
 
+	onDynamicDidChangeContentFullscreenActive(id: string) {
+		return this._getBrowserView(id).onDidChangeContentFullscreenActive;
+	}
+
 	onDynamicDidChangeDeviceEmulation(id: string) {
 		return this._getBrowserView(id).emulator.onDidChange;
 	}
@@ -367,6 +371,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	async toggleEditMode(id: string, enabled?: boolean): Promise<void> {
 		return this._getBrowserView(id).inspector.toggleEditMode(enabled);
+	}
+
+	async toggleContentFullscreen(id: string, enabled?: boolean): Promise<void> {
+		this._getBrowserView(id).toggleContentFullscreen(enabled);
 	}
 
 	async updateWindowConfiguration(windowId: number, config: IBrowserViewWindowConfiguration): Promise<void> {

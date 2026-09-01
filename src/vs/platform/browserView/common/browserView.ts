@@ -62,6 +62,10 @@ export enum BrowserViewCommandId {
 	// Page edit
 	ToggleEditMode = `${commandPrefix}.toggleEditMode`,
 
+	// Content fullscreen
+	ToggleContentFullscreen = `${commandPrefix}.toggleContentFullscreen`,
+	ExitContentFullscreen = `${commandPrefix}.exitContentFullscreen`,
+
 	// Find in page
 	ShowFind = `${commandPrefix}.showFind`,
 	HideFind = `${commandPrefix}.hideFind`,
@@ -340,6 +344,7 @@ export interface IBrowserViewState {
 	isRemoteSession: boolean;
 	isAreaSelectionActive: boolean;
 	isEditModeActive: boolean;
+	isContentFullscreenActive: boolean;
 	device: IBrowserDeviceProfile | undefined;
 	audiences: IBrowserViewAudience[];
 }
@@ -517,6 +522,7 @@ export interface IBrowserViewService {
 	onDynamicDidPickArea(id: string): Event<IBrowserViewRect | undefined>;
 	onDynamicDidChangeAreaSelectionActive(id: string): Event<boolean>;
 	onDynamicDidChangeEditModeActive(id: string): Event<boolean>;
+	onDynamicDidChangeContentFullscreenActive(id: string): Event<boolean>;
 	onDynamicDidChangeDeviceEmulation(id: string): Event<IBrowserDeviceProfile | undefined>;
 	onDynamicDidChangeRemoteStatus(id: string): Event<boolean>;
 	onDynamicDidChangeAudiences(id: string): Event<IBrowserViewAudience[]>;
@@ -777,6 +783,15 @@ export interface IBrowserViewService {
 	 * @param enabled Whether to enable or disable. Omit to toggle.
 	 */
 	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
+
+	/**
+	 * Expand the browser view to fill the host window's client area.
+	 * State changes are delivered via {@link onDynamicDidChangeContentFullscreenActive}.
+	 *
+	 * @param id The browser view identifier
+	 * @param enabled Whether to enable or disable. Omit to toggle.
+	 */
+	toggleContentFullscreen(id: string, enabled?: boolean): Promise<void>;
 
 	/**
 	 * Replace the calling window's configuration for the browser views it owns.

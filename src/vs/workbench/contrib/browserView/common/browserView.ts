@@ -386,6 +386,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly elementSelectionState: IBrowserElementSelectionState;
 	readonly isAreaSelectionActive: boolean;
 	readonly isEditModeActive: boolean;
+	readonly isContentFullscreenActive: boolean;
 	readonly device: IBrowserDeviceProfile | undefined;
 
 	readonly onDidChangeSharingState: Event<BrowserViewSharingState>;
@@ -408,6 +409,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly onDidPickArea: Event<IBrowserViewRect | undefined>;
 	readonly onDidChangeAreaSelectionActive: Event<boolean>;
 	readonly onDidChangeEditModeActive: Event<boolean>;
+	readonly onDidChangeContentFullscreenActive: Event<boolean>;
 	readonly onDidChangeDevice: Event<IBrowserDeviceProfile | undefined>;
 	readonly onDidChangeRemoteStatus: Event<boolean>;
 	readonly onDidRequestPermission: Event<IBrowserViewPermissionRequestEvent>;
@@ -439,6 +441,7 @@ export interface IBrowserViewModel extends IDisposable {
 	setElementComments(update: IBrowserElementCommentsUpdate): Promise<void>;
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
+	toggleContentFullscreen(enabled?: boolean): Promise<void>;
 	setDevice(device: IBrowserDeviceProfile | undefined): Promise<void>;
 }
 
@@ -464,6 +467,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	private _elementSelectionState: IBrowserElementSelectionState = { active: false, options: {} };
 	private _isAreaSelectionActive: boolean = false;
 	private _isEditModeActive: boolean = false;
+	private _isContentFullscreenActive: boolean = false;
 	private _device: IBrowserDeviceProfile | undefined;
 
 	readonly history = this._register(new BrowserHistoryStore());
@@ -519,6 +523,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		this._elementSelectionState = initialState.elementSelectionState;
 		this._isAreaSelectionActive = initialState.isAreaSelectionActive;
 		this._isEditModeActive = initialState.isEditModeActive;
+		this._isContentFullscreenActive = initialState.isContentFullscreenActive;
 		this._device = initialState.device;
 		this._sharedWithAgent = initialState.audiences.some(audience => audience.type === 'agent');
 		this._isEphemeral = this._storageScope === BrowserViewStorageScope.Ephemeral;
@@ -632,6 +637,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 			this._isEditModeActive = active;
 		}));
 
+		this._register(this.onDidChangeContentFullscreenActive(active => {
+			this._isContentFullscreenActive = active;
+		}));
+
 		this._register(this.browserViewService.onDynamicDidChangeAudiences(this.id)(audiences => {
 			this._setSharedWithAgent(audiences.some(audience => audience.type === 'agent'));
 		}));
@@ -671,6 +680,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	get elementSelectionState(): IBrowserElementSelectionState { return this._elementSelectionState; }
 	get isAreaSelectionActive(): boolean { return this._isAreaSelectionActive; }
 	get isEditModeActive(): boolean { return this._isEditModeActive; }
+	get isContentFullscreenActive(): boolean { return this._isContentFullscreenActive; }
 	get device(): IBrowserDeviceProfile | undefined { return this._device; }
 
 	get onDidNavigate(): Event<IBrowserViewNavigationEvent> {
@@ -888,6 +898,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.toggleEditMode(this.id, enabled);
 	}
 
+	async toggleContentFullscreen(enabled?: boolean): Promise<void> {
+		return this.browserViewService.toggleContentFullscreen(this.id, enabled);
+	}
+
 	get onDidSelectElement(): Event<IElementData> {
 		return this.browserViewService.onDynamicDidSelectElement(this.id);
 	}
@@ -910,6 +924,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	get onDidChangeEditModeActive(): Event<boolean> {
 		return this.browserViewService.onDynamicDidChangeEditModeActive(this.id);
+	}
+
+	get onDidChangeContentFullscreenActive(): Event<boolean> {
+		return this.browserViewService.onDynamicDidChangeContentFullscreenActive(this.id);
 	}
 
 	async setDevice(device: IBrowserDeviceProfile | undefined): Promise<void> {

@@ -63,6 +63,9 @@ export class BrowserView extends Disposable {
 
 	private _wantsVisibility = false;
 	private _hasBeenLaidOut = false;
+	private _contentFullscreenActive = false;
+	private _lastLayoutBounds: IBrowserViewBounds | undefined;
+	private _contentFullscreenResizeListener: (() => void) | undefined;
 
 	private static readonly MAX_CONSOLE_LOG_ENTRIES = 1000;
 	private readonly _consoleLogs: string[] = [];
@@ -116,6 +119,9 @@ export class BrowserView extends Disposable {
 
 	private readonly _onDidChangeAudiences = this._register(new Emitter<IBrowserViewAudience[]>());
 	readonly onDidChangeAudiences: Event<IBrowserViewAudience[]> = this._onDidChangeAudiences.event;
+
+	private readonly _onDidChangeContentFullscreenActive = this._register(new Emitter<boolean>());
+	readonly onDidChangeContentFullscreenActive: Event<boolean> = this._onDidChangeContentFullscreenActive.event;
 
 	constructor(
 		public readonly id: string,
@@ -623,6 +629,7 @@ export class BrowserView extends Disposable {
 			isRemoteSession: this.session.remote.isRemote,
 			isAreaSelectionActive: this.inspector.isAreaSelectionActive,
 			isEditModeActive: this.inspector.isEditModeActive,
+			isContentFullscreenActive: this._contentFullscreenActive,
 			device: this.emulator.device,
 			audiences: [...this._audiences]
 		};
@@ -663,6 +670,41 @@ export class BrowserView extends Disposable {
 		this._view.webContents.toggleDevTools();
 	}
 
+	get isContentFullscreenActive(): boolean {
+		return this._contentFullscreenActive;
+	}
+
+	/**
+	 * Expand this view to fill the host window client area, covering the workbench chrome.
+	 */
+	toggleContentFullscreen(enabled?: boolean): void {
+		const newEnabled = enabled ?? !this._contentFullscreenActive;
+		if (newEnabled === this._contentFullscreenActive) {
+			return;
+		}
+
+		if (newEnabled) {
+			if (!this._lastLayoutBounds) {
+				return;
+			}
+			void this.inspector.toggleElementSelection(false);
+			void this.inspector.toggleAreaSelection(false);
+			void this.inspector.toggleEditMode(false);
+			this._contentFullscreenActive = true;
+			this._applyContentFullscreenBounds();
+			this._installContentFullscreenResizeListener();
+			this._onDidChangeContentFullscreenActive.fire(true);
+			return;
+		}
+
+		this._contentFullscreenActive = false;
+		this._uninstallContentFullscreenResizeListener();
+		if (this._lastLayoutBounds) {
+			this._applyLayoutBounds(this._lastLayoutBounds);
+		}
+		this._onDidChangeContentFullscreenActive.fire(false);
+	}
+
 	/**
 	 * Update the layout bounds of this view
 	 */
@@ -676,6 +718,17 @@ export class BrowserView extends Disposable {
 			}
 		}
 
+		this._lastLayoutBounds = bounds;
+
+		if (this._contentFullscreenActive) {
+			this._applyContentFullscreenBounds();
+			return;
+		}
+
+		this._applyLayoutBounds(bounds);
+	}
+
+	private _applyLayoutBounds(bounds: IBrowserViewBounds): void {
 		this._view.setBorderRadius(Math.round(bounds.cornerRadius * bounds.zoomFactor));
 
 		if (bounds.emulation) {
@@ -695,6 +748,45 @@ export class BrowserView extends Disposable {
 		}
 	}
 
+	private _applyContentFullscreenBounds(): void {
+		const win = this._currentWindow?.win ?? this._ownerWindow.win;
+		if (!win) {
+			return;
+		}
+
+		const [width, height] = win.getContentSize();
+		const bounds = this._lastLayoutBounds;
+		this._view.setBorderRadius(0);
+		this._view.setBounds({ x: 0, y: 0, width, height });
+
+		if (bounds?.emulation) {
+			const zoomFactor = bounds.zoomFactor;
+			this.emulator.applyScreenEmulation(width / zoomFactor, height / zoomFactor, bounds.emulation.scale, zoomFactor);
+		}
+	}
+
+	private _installContentFullscreenResizeListener(): void {
+		const win = this._currentWindow?.win ?? this._ownerWindow.win;
+		if (!win || this._contentFullscreenResizeListener) {
+			return;
+		}
+
+		this._contentFullscreenResizeListener = () => {
+			if (this._contentFullscreenActive) {
+				this._applyContentFullscreenBounds();
+			}
+		};
+		win.on('resize', this._contentFullscreenResizeListener);
+	}
+
+	private _uninstallContentFullscreenResizeListener(): void {
+		const win = this._currentWindow?.win ?? this._ownerWindow.win;
+		if (win && this._contentFullscreenResizeListener) {
+			win.removeListener('resize', this._contentFullscreenResizeListener);
+			this._contentFullscreenResizeListener = undefined;
+		}
+	}
+
 	setBrowserZoomIndex(zoomIndex: number): void {
 		this._browserZoomIndex = Math.max(0, Math.min(zoomIndex, browserZoomFactors.length - 1));
 		const browserZoomFactor = browserZoomFactors[this._browserZoomIndex];
@@ -707,6 +799,10 @@ export class BrowserView extends Disposable {
 	setVisible(visible: boolean): void {
 		if (this._wantsVisibility === visible) {
 			return;
+		}
+
+		if (!visible && this._contentFullscreenActive) {
+			this.toggleContentFullscreen(false);
 		}
 
 		// If the view is focused, pass focus back to the window when hiding
@@ -1047,6 +1143,8 @@ export class BrowserView extends Disposable {
 			return;
 		}
 		this._isDisposed = true;
+
+		this._uninstallContentFullscreenResizeListener();
 
 		// Dispose debugger. This detaches debug sessions first.
 		this.debugger.dispose();
