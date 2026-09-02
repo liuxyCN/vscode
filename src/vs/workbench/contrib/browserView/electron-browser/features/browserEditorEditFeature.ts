@@ -11,7 +11,7 @@ import { RawContextKey, IContextKey, IContextKeyService, ContextKeyExpr } from '
 import { Action2, registerAction2, MenuId } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { BrowserViewCommandId } from '../../../../../platform/browserView/common/browserView.js';
+import { BrowserViewCommandId, isAssociatedHtmlResource } from '../../../../../platform/browserView/common/browserView.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IBrowserViewModel } from '../../common/browserView.js';
 import {
@@ -26,6 +26,14 @@ import {
 import { browserViewActionTitle } from '../../common/browserViewI18n.js';
 
 export const CONTEXT_BROWSER_EDIT_MODE_ACTIVE = new RawContextKey<boolean>('browserEditModeActive', false, localize('browser.editModeActive', "Whether in-page edit mode is active"));
+
+export { isAssociatedHtmlResource };
+
+export const CONTEXT_BROWSER_HTML_EDIT_AVAILABLE = new RawContextKey<boolean>(
+	'browserHtmlEditAvailable',
+	false,
+	localize('browser.htmlEditAvailable', "Whether HTML visual edit mode is available for the current browser tab"),
+);
 
 class BrowserEditorEditModeContribution extends BrowserEditorContribution {
 	private readonly _editModeActiveContext: IContextKey<boolean>;
@@ -62,7 +70,7 @@ class ToggleEditModeAction extends Action2 {
 			category: BrowserActionCategory,
 			icon: Codicon.edit,
 			f1: true,
-			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR.negate()),
+			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR.negate(), CONTEXT_BROWSER_HTML_EDIT_AVAILABLE),
 			toggled: ContextKeyExpr.equals(CONTEXT_BROWSER_EDIT_MODE_ACTIVE.key, true),
 			menu: {
 				id: MenuId.BrowserActionsToolbar,

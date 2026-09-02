@@ -73,9 +73,17 @@ const varReferenceRegex = /var\(\s*(--[a-zA-Z0-9_-]+)/g;
  * Key computed properties included for hover display in the UI.
  */
 export const keyComputedProperties = new Set([
-	'display', 'position', 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
-	'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-	'font-size', 'font-family', 'color', 'background-color',
+	'display', 'position', 'transform', 'text-align',
+	'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+	'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+	'font-size', 'font-family', 'font-weight', 'line-height', 'letter-spacing', 'color',
+	'background-color', 'opacity',
+	'width', 'height', 'min-height', 'overflow',
+	'gap', 'flex-direction', 'justify-content', 'align-items',
+	'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+	'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+	'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+	'border-style', 'border-color', 'border-radius',
 ]);
 
 /**
@@ -237,6 +245,45 @@ export function formatMatchedStyles(matched: IMatchedStyles): IFormattedStyles {
 	}
 
 	return { rulesText: lines.join('\n'), referencedVars, authorPropertyNames, userAgentPropertyNames };
+}
+
+const htmlEditAuthorStyleProperties = ['color', 'font-size', 'background-color'] as const;
+
+/**
+ * Collect author-specified style values (as written in rules/inline style),
+ * in cascade order so later sources override earlier ones.
+ */
+export function extractAuthorStyleValues(matched: IMatchedStyles): Record<string, string> {
+	const wanted = new Set<string>(htmlEditAuthorStyleProperties);
+	const values: Record<string, string> = {};
+
+	const apply = (props: Array<{ name: string; value: string; disabled?: boolean }> | undefined): void => {
+		for (const prop of props ?? []) {
+			if (prop.disabled || !wanted.has(prop.name)) {
+				continue;
+			}
+			values[prop.name] = prop.value;
+		}
+	};
+
+	for (const entry of matched.inherited ?? []) {
+		for (const ruleEntry of entry.matchedCSSRules ?? []) {
+			if (ruleEntry.rule.origin !== 'user-agent') {
+				apply(ruleEntry.rule.style.cssProperties);
+			}
+		}
+		apply(entry.inlineStyle?.cssProperties);
+	}
+
+	for (const ruleEntry of matched.matchedCSSRules ?? []) {
+		if (ruleEntry.rule.origin !== 'user-agent') {
+			apply(ruleEntry.rule.style.cssProperties);
+		}
+	}
+
+	apply(matched.inlineStyle?.cssProperties);
+
+	return values;
 }
 
 /**

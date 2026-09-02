@@ -71,6 +71,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 	private readonly _browserViewService: IBrowserViewService;
 	private readonly _known = new Map<string, BrowserEditorInput>();
+	private readonly _inputDisposeListeners = new Map<string, IDisposable>();
 	private readonly _contextualFilters = new Set<IBrowserViewContextualFilter>();
 	private readonly _openHandlers = new Set<IBrowserViewOpenHandler>();
 	private readonly _mainWindowId: number;
@@ -358,6 +359,14 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 	private _getOrCreateLazy(data: IBrowserEditorInputData, model?: IBrowserViewModel, createOptions?: IBrowserViewWorkbenchCreateOptions): BrowserEditorInput {
 		const { id, associatedResource } = data;
+
+		if (associatedResource) {
+			const existing = this._findKnownByAssociatedResource(associatedResource);
+			if (existing) {
+				return existing;
+			}
+		}
+
 		if (!this._known.has(id)) {
 			const input = this.instantiationService.createInstance(BrowserEditorInput, data, async () => {
 				const info = await this._browserViewService.getOrCreateBrowserView(
@@ -374,10 +383,14 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 				);
 				return this._createModel(info);
 			});
-			input.onWillDispose(() => {
+			const listener = input.onWillDispose(() => {
 				this._known.delete(id);
+				const subscription = this._inputDisposeListeners.get(id);
+				this._inputDisposeListeners.delete(id);
+				subscription?.dispose();
 				this._onDidChangeBrowserViews.fire();
 			});
+			this._inputDisposeListeners.set(id, listener);
 			if (model) {
 				input.model = model;
 			}
@@ -386,6 +399,23 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		}
 
 		return this._known.get(id)!;
+	}
+
+	private _findKnownByAssociatedResource(resource: URI): BrowserEditorInput | undefined {
+		for (const input of this._known.values()) {
+			if (input.associatedResource && isEqual(input.associatedResource, resource)) {
+				return input;
+			}
+		}
+		return undefined;
+	}
+
+	override dispose(): void {
+		for (const listener of this._inputDisposeListeners.values()) {
+			listener.dispose();
+		}
+		this._inputDisposeListeners.clear();
+		super.dispose();
 	}
 
 	async clearGlobalStorage(): Promise<void> {

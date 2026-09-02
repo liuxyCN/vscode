@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { timeout } from '../../../../../../base/common/async.js';
-import { Emitter } from '../../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
@@ -15,10 +15,11 @@ import { IConfigurationChangeEvent, IConfigurationService } from '../../../../..
 import { FileChangesEvent, FileChangeType, IFileService, IFileSystemWatcher } from '../../../../../../platform/files/common/files.js';
 import { BrowserEditorInput } from '../../../common/browserEditorInput.js';
 import { IBrowserViewModel, IBrowserViewWorkbenchService } from '../../../common/browserView.js';
-import { BrowserAutoReloadService, BrowserAutoReloadWatcher } from '../../../electron-browser/features/browserAutoReloadFeatures.js';
+import { BrowserAutoReloadService, BrowserAutoReloadWatcher, IBrowserAutoReloadService } from '../../../electron-browser/features/browserAutoReloadFeatures.js';
 
 suite('Browser Auto Reload Features', () => {
 	const disposables = new DisposableStore();
+	const autoReloadService = new TestAutoReloadService();
 
 	teardown(() => disposables.clear());
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -27,8 +28,8 @@ suite('Browser Auto Reload Features', () => {
 		const fileService = new TestFileService();
 		const emptyModel = disposables.add(new TestBrowserViewModel(''));
 		const httpModel = disposables.add(new TestBrowserViewModel('https://example.com'));
-		disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(emptyModel).input, true, fileService.service));
-		disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(httpModel).input, true, fileService.service));
+		disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(emptyModel).input, true, fileService.service, autoReloadService.service));
+		disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(httpModel).input, true, fileService.service, autoReloadService.service));
 
 		assert.deepStrictEqual(fileService.snapshot(), {
 			resources: [],
@@ -47,7 +48,7 @@ suite('Browser Auto Reload Features', () => {
 	test('watches file URLs and replaces the watcher on navigation', () => {
 		const fileService = new TestFileService();
 		const model = disposables.add(new TestBrowserViewModel('file:///workspace/index.html?theme=dark#section'));
-		const watcher = disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service));
+		const watcher = disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service, autoReloadService.service));
 
 		assert.deepStrictEqual(fileService.snapshot(), {
 			resources: ['file:///workspace/index.html'],
@@ -81,7 +82,7 @@ suite('Browser Auto Reload Features', () => {
 		return runWithFakedTimers({ useFakeTimers: true, maxTaskCount: 10_000 }, async () => {
 			const fileService = new TestFileService();
 			const model = disposables.add(new TestBrowserViewModel('file:///workspace/index.html'));
-			disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service));
+			disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service, autoReloadService.service));
 
 			fileService.fire(URI.file('/workspace/unrelated.html'));
 			fileService.fire(URI.file('/workspace/index.html'), FileChangeType.DELETED);
@@ -99,7 +100,7 @@ suite('Browser Auto Reload Features', () => {
 		return runWithFakedTimers({ useFakeTimers: true, maxTaskCount: 10_000 }, async () => {
 			const fileService = new TestFileService();
 			const model = disposables.add(new TestBrowserViewModel('file:///workspace/index.html'));
-			disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service));
+			disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service, autoReloadService.service));
 
 			model.setVisible(false);
 			fileService.fire(URI.file('/workspace/index.html'));
@@ -122,7 +123,7 @@ suite('Browser Auto Reload Features', () => {
 		return runWithFakedTimers({ useFakeTimers: true, maxTaskCount: 10_000 }, async () => {
 			const fileService = new TestFileService();
 			const model = disposables.add(new TestBrowserViewModel('file:///workspace/index.html'));
-			const watcher = disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service));
+			const watcher = disposables.add(new BrowserAutoReloadWatcher(new TestBrowserEditorInput(model).input, true, fileService.service, autoReloadService.service));
 
 			model.setVisible(false);
 			fileService.fire(URI.file('/workspace/index.html'));
@@ -321,4 +322,15 @@ class TestConfigurationService {
 			affectsConfiguration: () => true,
 		} as Partial<IConfigurationChangeEvent> as IConfigurationChangeEvent);
 	}
+}
+
+class TestAutoReloadService {
+	readonly service = {
+		_serviceBrand: undefined,
+		onDidChangeState: Event.None,
+		isEnabled: () => true,
+		setEnabled: () => { },
+		suppressAutoReloadForResource: () => { },
+		isAutoReloadSuppressed: () => false,
+	} as Partial<IBrowserAutoReloadService> as IBrowserAutoReloadService;
 }

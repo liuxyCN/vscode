@@ -7,9 +7,10 @@
 /* eslint-disable no-restricted-syntax */
 
 // Only `import type` is allowed in preload scripts — Electron preloads cannot resolve module imports at runtime.
-import type { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserViewPreloadLocalizedStrings, IBrowserViewTheme, IBrowserViewRect } from '../common/browserView.js';
+import type { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserHtmlEditPreview, IBrowserViewPreloadLocalizedStrings, IBrowserViewTheme, IBrowserViewRect } from '../common/browserView.js';
 
 const commentElementSelectionMode = 'comment' as BrowserElementSelectionMode;
+const editElementSelectionMode = 'edit' as BrowserElementSelectionMode;
 let localizedStrings: IBrowserViewPreloadLocalizedStrings = {
 	addComment: 'Add Comment',
 	addCommentPlaceholder: 'Add a comment',
@@ -135,14 +136,25 @@ function init() {
 		});
 	});
 
+	const htmlEditBridge = new HtmlEditBridge(payload => {
+		ipcRenderer.send('vscode:browserView:htmlEditTextCommit', payload);
+	});
+	ipcRenderer.on('vscode:browserView:editPreview', (_event: unknown, preview: IBrowserHtmlEditPreview) => {
+		htmlEditBridge.applyPreview(preview);
+	});
+	ipcRenderer.on('vscode:browserView:editTextFinish', (_event: unknown, data: { commit?: boolean }) => {
+		htmlEditBridge.finishActiveTextEdit(data?.commit !== false);
+	});
+
 	const elementPicker = new ElementPicker(
 		(el, comment) => {
 			const elementId = track(el);
-			ipcRenderer.send('vscode:browserView:elementPicked', { elementId, comment });
+			ipcRenderer.send('vscode:browserView:elementPicked', { elementId, comment, domPath: domPathForElement(el) });
 			return elementId;
 		},
 		elementId => ipcRenderer.send('vscode:browserView:elementCommentRemoved', elementId),
-		() => ipcRenderer.send('vscode:browserView:elementPickStopped')
+		() => ipcRenderer.send('vscode:browserView:elementPickStopped'),
+		htmlEditBridge,
 	);
 
 	const areaPicker = new AreaPicker(
@@ -255,36 +267,10 @@ function init() {
 	// the CDP target session (discoverable via Runtime.evaluate in the main world).
 	const frameToken = `frame-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-	let editModeActive = false;
-	let editModeClickHandler: ((event: Event) => void) | undefined;
-
 	const mainWorldHelpers = {
 		getElement,
 		/** Opaque token exposed for CDP-side frame matching. */
 		getFrameToken(): string { return frameToken; },
-		startEditMode(): void {
-			if (editModeActive) {
-				return;
-			}
-			editModeActive = true;
-			document.body.setAttribute('contenteditable', 'true');
-			editModeClickHandler = (event: Event) => {
-				event.stopPropagation();
-				event.preventDefault();
-			};
-			document.addEventListener('click', editModeClickHandler, true);
-		},
-		stopEditMode(): void {
-			if (!editModeActive) {
-				return;
-			}
-			editModeActive = false;
-			document.body.removeAttribute('contenteditable');
-			if (editModeClickHandler) {
-				document.removeEventListener('click', editModeClickHandler, true);
-				editModeClickHandler = undefined;
-			}
-		},
 	};
 
 	try {
@@ -385,6 +371,324 @@ type CommentAnimation = {
 	supporting: Animation[];
 };
 
+const BODY_DOM_PATH = '__body__';
+
+function domPathForElement(el: Element): string {
+	const parts: number[] = [];
+	let node: Element | null = el;
+	while (node && node !== document.body) {
+		const parentEl: Element | null = node.parentElement;
+		if (!parentEl) {
+			break;
+		}
+		parts.unshift(Array.prototype.indexOf.call(parentEl.children, node));
+		node = parentEl;
+	}
+	return parts.length ? `path-${parts.join('-')}` : '';
+}
+
+function findElementByDomPath(domPath: string): Element | null {
+	if (domPath === BODY_DOM_PATH) {
+		return document.body;
+	}
+	if (!domPath.startsWith('path-')) {
+		return null;
+	}
+	const parts = domPath.slice('path-'.length).split('-').map(part => Number(part));
+	let node: Element | null = document.body;
+	for (const idx of parts) {
+		if (!node || !Number.isInteger(idx) || idx < 0) {
+			return null;
+		}
+		node = node.children[idx] ?? null;
+	}
+	return node;
+}
+
+function camelToKebab(name: string): string {
+	return name.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`);
+}
+
+const HTML_EDIT_BORDER_PREVIEW_LONGHANDS = new Set([
+	'borderStyle',
+	'borderColor',
+	'borderTopWidth',
+	'borderRightWidth',
+	'borderBottomWidth',
+	'borderLeftWidth',
+]);
+
+const HTML_EDIT_BORDER_INLINE_PROPS = [
+	'border',
+	'border-width', 'border-style', 'border-color',
+	'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+	'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+	'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+] as const;
+
+const HTML_EDIT_BORDER_WIDTH_KEYS = [
+	'borderTopWidth',
+	'borderRightWidth',
+	'borderBottomWidth',
+	'borderLeftWidth',
+] as const;
+
+function applyBorderPreviewBatch(el: HTMLElement, styles: Record<string, string>): void {
+	for (const prop of HTML_EDIT_BORDER_INLINE_PROPS) {
+		el.style.removeProperty(prop);
+	}
+
+	const widthValues = HTML_EDIT_BORDER_WIDTH_KEYS
+		.filter(key => Object.prototype.hasOwnProperty.call(styles, key))
+		.map(key => styles[key]?.trim() ?? '');
+	if (widthValues.length > 0) {
+		const first = widthValues[0]!;
+		if (widthValues.every(value => value === first)) {
+			if (first) {
+				el.style.setProperty('border-width', first);
+			}
+		} else {
+			for (const key of HTML_EDIT_BORDER_WIDTH_KEYS) {
+				if (!Object.prototype.hasOwnProperty.call(styles, key)) {
+					continue;
+				}
+				const value = styles[key]?.trim() ?? '';
+				if (value) {
+					el.style.setProperty(camelToKebab(key), value);
+				}
+			}
+		}
+	}
+
+	if (Object.prototype.hasOwnProperty.call(styles, 'borderStyle')) {
+		const value = styles.borderStyle?.trim() ?? '';
+		if (value) {
+			el.style.setProperty('border-style', value);
+		}
+	}
+
+	if (Object.prototype.hasOwnProperty.call(styles, 'borderColor')) {
+		const value = styles.borderColor?.trim() ?? '';
+		if (value) {
+			el.style.setProperty('border-color', value);
+		}
+	}
+}
+
+function caretRangeFromClick(clickEvent: MouseEvent | PointerEvent): Range | null {
+	try {
+		if (document.caretPositionFromPoint) {
+			const position = document.caretPositionFromPoint(clickEvent.clientX, clickEvent.clientY);
+			if (!position) {
+				return null;
+			}
+			const range = document.createRange();
+			range.setStart(position.offsetNode, position.offset);
+			range.collapse(true);
+			return range;
+		}
+		if (document.caretRangeFromPoint) {
+			return document.caretRangeFromPoint(clickEvent.clientX, clickEvent.clientY);
+		}
+	} catch {
+		// ignore
+	}
+	return null;
+}
+
+function placeCaretFromClick(clickEvent: MouseEvent | PointerEvent | undefined, el: Element): void {
+	let range = clickEvent ? caretRangeFromClick(clickEvent) : null;
+	if (!range) {
+		range = document.createRange();
+		range.selectNodeContents(el);
+		range.collapse(false);
+	}
+	try {
+		const selection = window.getSelection();
+		if (!selection) {
+			return;
+		}
+		selection.removeAllRanges();
+		selection.addRange(range);
+	} catch {
+		// ignore
+	}
+}
+
+const HTML_EDIT_INLINE_INPUT_DEBOUNCE_MS = 50;
+
+interface IActiveTextEdit {
+	readonly el: HTMLElement;
+	readonly domPath: string;
+	readonly originalText: string;
+	readonly onKey: (ev: Event) => void;
+	readonly onInput: (ev: Event) => void;
+	inputDebounceHandle: ReturnType<typeof setTimeout> | undefined;
+}
+
+/** Inline text editing and live preview for workspace HTML edit mode. */
+class HtmlEditBridge {
+	private _activeTextEdit: IActiveTextEdit | undefined;
+
+	constructor(
+		private readonly _onTextCommit: (payload: { domPath: string; value: string }) => void,
+	) { }
+
+	get activeTextEditElement(): Element | undefined {
+		return this._activeTextEdit?.el;
+	}
+
+	isEditingElement(el: Element): boolean {
+		return this._activeTextEdit?.el === el;
+	}
+
+	isEditInteractionTarget(el: Element | undefined): boolean {
+		if (!el || !this._activeTextEdit) {
+			return false;
+		}
+		const editing = this._activeTextEdit.el;
+		return el === editing || editing.contains(el);
+	}
+
+	shouldStartInlineEdit(el: Element): boolean {
+		const explicit = el.getAttribute('data-od-edit');
+		if (explicit === 'image' || explicit === 'container') {
+			return false;
+		}
+		const tag = el.tagName.toLowerCase();
+		if (tag === 'a') {
+			return true;
+		}
+		if (el.children.length > 0) {
+			return false;
+		}
+		if (['script', 'style', 'img', 'br', 'hr', 'input', 'textarea', 'select', 'button', 'svg'].includes(tag)) {
+			return false;
+		}
+		return explicit === 'text' || explicit === 'link' || !['section', 'main', 'nav', 'div', 'article', 'header', 'footer'].includes(tag);
+	}
+
+	finishActiveTextEdit(commit: boolean): boolean {
+		if (!this._activeTextEdit) {
+			return false;
+		}
+		const session = this._activeTextEdit;
+		this._activeTextEdit = undefined;
+		const el = session.el;
+		if (session.inputDebounceHandle !== undefined) {
+			clearTimeout(session.inputDebounceHandle);
+		}
+		el.removeAttribute('contenteditable');
+		el.removeAttribute('data-vscode-editing');
+		el.removeEventListener('keydown', session.onKey);
+		el.removeEventListener('input', session.onInput);
+		const value = (el.textContent ?? '').trim();
+		const changed = value !== session.originalText.trim();
+		if (commit && changed) {
+			this._onTextCommit({ domPath: session.domPath, value });
+		} else if (!commit) {
+			el.textContent = session.originalText;
+		}
+		return true;
+	}
+
+	makeEditable(el: Element, clickEvent?: MouseEvent | PointerEvent): void {
+		if (!(el instanceof HTMLElement) || el === document.body) {
+			return;
+		}
+		if (this._activeTextEdit?.el === el) {
+			if (clickEvent) {
+				placeCaretFromClick(clickEvent, el);
+			}
+			return;
+		}
+		this.finishActiveTextEdit(true);
+		if (el.getAttribute('contenteditable') === 'true') {
+			return;
+		}
+		const originalText = el.textContent ?? '';
+		el.setAttribute('contenteditable', 'true');
+		el.setAttribute('data-vscode-editing', 'true');
+		try {
+			el.focus();
+		} catch {
+			// ignore
+		}
+		if (clickEvent) {
+			placeCaretFromClick(clickEvent, el);
+		}
+		const domPath = domPathForElement(el);
+		const onKey = (ev: Event) => {
+			if (!(ev instanceof KeyboardEvent)) {
+				return;
+			}
+			if (ev.key === 'Enter' && !ev.shiftKey) {
+				ev.preventDefault();
+				this.finishActiveTextEdit(true);
+			}
+			if (ev.key === 'Escape') {
+				ev.preventDefault();
+				this.finishActiveTextEdit(false);
+			}
+		};
+		const onInput = () => {
+			const active = this._activeTextEdit;
+			if (!active) {
+				return;
+			}
+			if (active.inputDebounceHandle !== undefined) {
+				clearTimeout(active.inputDebounceHandle);
+			}
+			active.inputDebounceHandle = setTimeout(() => {
+				if (this._activeTextEdit !== active) {
+					return;
+				}
+				active.inputDebounceHandle = undefined;
+				this._onTextCommit({ domPath, value: el.textContent ?? '' });
+			}, HTML_EDIT_INLINE_INPUT_DEBOUNCE_MS);
+		};
+		this._activeTextEdit = { el, domPath, originalText, onKey, onInput, inputDebounceHandle: undefined };
+		el.addEventListener('keydown', onKey);
+		el.addEventListener('input', onInput);
+	}
+
+	applyPreview(preview: IBrowserHtmlEditPreview): void {
+		const el = findElementByDomPath(preview.domPath);
+		if (!(el instanceof HTMLElement)) {
+			return;
+		}
+		if (preview.styles) {
+			const hasBorderPreview = Object.keys(preview.styles).some(key => HTML_EDIT_BORDER_PREVIEW_LONGHANDS.has(key));
+			if (hasBorderPreview) {
+				applyBorderPreviewBatch(el, preview.styles);
+			}
+			for (const [key, value] of Object.entries(preview.styles)) {
+				if (HTML_EDIT_BORDER_PREVIEW_LONGHANDS.has(key)) {
+					continue;
+				}
+				const cssName = camelToKebab(key);
+				if (typeof value !== 'string' || value.trim() === '') {
+					el.style.removeProperty(cssName);
+				} else {
+					el.style.setProperty(cssName, value.trim());
+				}
+			}
+		}
+		if (typeof preview.text === 'string' && el !== document.body && el.children.length === 0 && !this.isEditingElement(el)) {
+			el.textContent = preview.text;
+		}
+		if (typeof preview.href === 'string' && el instanceof HTMLAnchorElement) {
+			el.href = preview.href;
+		}
+		if (typeof preview.src === 'string' && el instanceof HTMLImageElement) {
+			el.src = preview.src;
+		}
+		if (typeof preview.alt === 'string' && el instanceof HTMLImageElement) {
+			el.alt = preview.alt;
+		}
+	}
+}
+
 /**
  * Element-pick controller used by the "Add Element to Chat" flow.
  *
@@ -410,6 +714,7 @@ class ElementPicker {
 	private _selectionActive = false;
 	private _continuous = false;
 	private _commentMode = false;
+	private _editMode = false;
 
 	// DOM — created once in the constructor, reused across start/stop cycles.
 	private readonly _shadowHost: HTMLDivElement;
@@ -454,11 +759,13 @@ class ElementPicker {
 	private _commentAnimation: CommentAnimation | undefined;
 	private _commentPreviewCollapsing = false;
 	private _reducedMotion = false;
+	private _lastCommitPointerEvent: PointerEvent | undefined;
 
 	constructor(
 		private readonly _onPicked: (element: Element, comment?: string) => string,
 		private readonly _onCommentRemoved: (elementId: string) => void,
-		private readonly _onStopped: () => void
+		private readonly _onStopped: () => void,
+		private readonly _htmlEdit?: HtmlEditBridge,
 	) {
 		// Build the shadow DOM tree once. The host is appended/removed from the
 		// document on start/stop so the overlay only captures events when active.
@@ -660,6 +967,7 @@ class ElementPicker {
 			return true;
 		}
 		this._commentMode = options.mode === commentElementSelectionMode;
+		this._editMode = options.mode === editElementSelectionMode;
 		this._continuous = options.continuous ?? false;
 		this._ensureMounted();
 		this._selectionActive = true;
@@ -696,6 +1004,7 @@ class ElementPicker {
 	private _updateSelectionOptions(options: IBrowserElementSelectionOptions): void {
 		const wasCommentMode = this._commentMode;
 		this._commentMode = options.mode === commentElementSelectionMode;
+		this._editMode = options.mode === editElementSelectionMode;
 		this._continuous = options.continuous ?? false;
 		if (wasCommentMode && !this._commentMode && this._commentTarget) {
 			this._closeCommentComposer();
@@ -710,6 +1019,7 @@ class ElementPicker {
 		if (!this._selectionActive) {
 			return;
 		}
+		this._htmlEdit?.finishActiveTextEdit(true);
 		this._hideActiveCommentPreview();
 		this._selectionActive = false;
 		this._closeCommentComposer();
@@ -921,6 +1231,9 @@ class ElementPicker {
 		if (e.composedPath().includes(this._shadowHost)) {
 			return;
 		}
+		if (this._editMode && this._htmlEdit?.isEditInteractionTarget(this._pickElementAt(e.clientX, e.clientY))) {
+			return;
+		}
 		if (this._pendingCommentInteractionId) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -977,6 +1290,13 @@ class ElementPicker {
 			const target = this._dragStartTarget ?? this._pickElementAt(e.clientX, e.clientY);
 			this._dragStartTarget = undefined;
 			if (target) {
+				if (this._editMode && this._htmlEdit?.isEditingElement(target)) {
+					this._htmlEdit.makeEditable(target, e);
+					e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
+				this._lastCommitPointerEvent = e;
 				this._commit(target, { x: e.clientX, y: e.clientY });
 			}
 		} else {
@@ -1038,6 +1358,11 @@ class ElementPicker {
 			return;
 		}
 		if (e.key === 'Escape') {
+			if (this._editMode && this._htmlEdit?.finishActiveTextEdit(false)) {
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
 			if (this._commentTarget) {
 				const target = this._commentTarget;
 				this._focusCommentTarget(target);
@@ -1313,6 +1638,18 @@ class ElementPicker {
 		}
 		if (this._commentMode) {
 			this._showCommentComposer(target, anchor ?? this._getDefaultCommentAnchor(target), anchor !== undefined);
+			return;
+		}
+		if (this._editMode) {
+			this._htmlEdit?.finishActiveTextEdit(true);
+			const pointerEvent = this._lastCommitPointerEvent;
+			requestAnimationFrame(() => {
+				this._updateHighlight(target);
+				this._onPicked(target);
+				if (this._htmlEdit?.shouldStartInlineEdit(target)) {
+					this._htmlEdit.makeEditable(target, pointerEvent);
+				}
+			});
 			return;
 		}
 		// Wait a frame so any pending event handlers can be completed in the selecting active state.

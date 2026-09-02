@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
-import { BrowserViewSessionSelector, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserViewAudience, IBrowserViewBounds, IBrowserViewState, IBrowserViewService, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, BrowserViewCommandId, IBrowserViewOwner, IBrowserViewInfo, IBrowserViewCreatedEvent, IBrowserViewEditorOpenOptions, IBrowserViewCreateOptions, IBrowserViewCreationContext, IBrowserViewWindowConfiguration, IBrowserDeviceProfile } from '../common/browserView.js';
+import { BrowserViewSessionSelector, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserViewAudience, IBrowserViewBounds, IBrowserViewState, IBrowserViewService, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, BrowserViewCommandId, IBrowserViewOwner, IBrowserViewInfo, IBrowserViewCreatedEvent, IBrowserViewEditorOpenOptions, IBrowserViewCreateOptions, IBrowserViewCreationContext, IBrowserViewWindowConfiguration, IBrowserDeviceProfile, IBrowserHtmlEditPreview } from '../common/browserView.js';
 import { clipboard, Menu, MenuItem } from 'electron';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
@@ -371,6 +371,14 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	async toggleEditMode(id: string, enabled?: boolean): Promise<void> {
 		return this._getBrowserView(id).inspector.toggleEditMode(enabled);
+	}
+
+	async applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void> {
+		return this._getBrowserView(id).inspector.applyHtmlEditPreview(preview);
+	}
+
+	onDynamicDidCommitHtmlEditText(id: string) {
+		return this._getBrowserView(id).inspector.onDidCommitHtmlEditText;
 	}
 
 	async toggleContentFullscreen(id: string, enabled?: boolean): Promise<void> {

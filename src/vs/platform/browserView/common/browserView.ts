@@ -81,7 +81,12 @@ export interface IElementAncestor {
 
 export enum BrowserElementSelectionMode {
 	Select = 'select',
-	Comment = 'comment'
+	Comment = 'comment',
+	Edit = 'edit',
+}
+
+export function isAssociatedHtmlResource(resource: URI | undefined): boolean {
+	return !!resource && /\.html?$/i.test(resource.path);
 }
 
 export interface IBrowserElementSelectionOptions {
@@ -99,12 +104,16 @@ export interface IElementData {
 	readonly url?: string;
 	readonly elementId?: string;
 	readonly comment?: string;
+	/** Stable DOM child-index path (`path-0-1-2`) for mapping live picks back to source HTML. */
+	readonly domPath?: string;
 	readonly outerHTML: string;
 	readonly computedStyle: string;
 	readonly bounds: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 	readonly ancestors?: IElementAncestor[];
 	readonly attributes?: Record<string, string>;
 	readonly computedStyles?: Record<string, string>;
+	/** Author-written values for key visual properties (not computed rgb). */
+	readonly authorStyles?: Record<string, string>;
 	readonly dimensions?: { readonly top: number; readonly left: number; readonly width: number; readonly height: number };
 	readonly innerText?: string;
 }
@@ -117,6 +126,20 @@ export interface IBrowserElementComment {
 export interface IBrowserElementCommentsUpdate {
 	readonly comments?: readonly IBrowserElementComment[];
 	readonly pendingCommentIdsToDiscard?: readonly string[];
+}
+
+export interface IBrowserHtmlEditPreview {
+	readonly domPath: string;
+	readonly styles?: Record<string, string>;
+	readonly text?: string;
+	readonly href?: string;
+	readonly src?: string;
+	readonly alt?: string;
+}
+
+export interface IBrowserHtmlEditTextCommit {
+	readonly domPath: string;
+	readonly value: string;
 }
 
 export interface IBrowserViewRect {
@@ -522,6 +545,7 @@ export interface IBrowserViewService {
 	onDynamicDidPickArea(id: string): Event<IBrowserViewRect | undefined>;
 	onDynamicDidChangeAreaSelectionActive(id: string): Event<boolean>;
 	onDynamicDidChangeEditModeActive(id: string): Event<boolean>;
+	onDynamicDidCommitHtmlEditText(id: string): Event<IBrowserHtmlEditTextCommit>;
 	onDynamicDidChangeContentFullscreenActive(id: string): Event<boolean>;
 	onDynamicDidChangeDeviceEmulation(id: string): Event<IBrowserDeviceProfile | undefined>;
 	onDynamicDidChangeRemoteStatus(id: string): Event<boolean>;
@@ -783,6 +807,11 @@ export interface IBrowserViewService {
 	 * @param enabled Whether to enable or disable. Omit to toggle.
 	 */
 	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
+
+	/**
+	 * Apply live HTML edit preview updates to the in-page DOM (styles, text, attributes).
+	 */
+	applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void>;
 
 	/**
 	 * Expand the browser view to fill the host window's client area.

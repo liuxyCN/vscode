@@ -5,7 +5,7 @@
 
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
-import { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserElementSelectionState, IElementData, IBrowserViewTheme, IBrowserViewRect, IBrowserViewPreloadLocalizedStrings } from '../common/browserView.js';
+import { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserElementSelectionState, IBrowserHtmlEditPreview, IBrowserHtmlEditTextCommit, IElementData, IBrowserViewTheme, IBrowserViewRect, IBrowserViewPreloadLocalizedStrings, isAssociatedHtmlResource } from '../common/browserView.js';
 import { ICDPConnection } from '../common/cdp/types.js';
 import type { BrowserView } from './browserView.js';
 import { BrowserViewFrameInspector } from './browserViewFrameInspector.js';
@@ -27,8 +27,6 @@ interface IActiveSelection extends IDisposable {
 }
 
 interface IActiveAreaSelection extends IDisposable { }
-
-interface IActiveEditMode extends IDisposable { }
 
 export interface IElementHandle extends IDisposable {
 	addToChat(): Promise<void>;
@@ -103,10 +101,11 @@ export class BrowserViewInspector extends Disposable {
 	private readonly _onDidChangeEditModeActive = this._register(new Emitter<boolean>());
 	readonly onDidChangeEditModeActive: Event<boolean> = this._onDidChangeEditModeActive.event;
 
+	private readonly _onDidCommitHtmlEditText = this._register(new Emitter<IBrowserHtmlEditTextCommit>());
+	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit> = this._onDidCommitHtmlEditText.event;
+
 	private _editModeActive = false;
 	get isEditModeActive(): boolean { return this._editModeActive; }
-
-	private readonly _activeEditMode = this._register(new MutableDisposable<IActiveEditMode>());
 
 	private readonly _activeAreaSelection = this._register(new MutableDisposable<IActiveAreaSelection>());
 
@@ -124,7 +123,6 @@ export class BrowserViewInspector extends Disposable {
 		const onNavigated = () => {
 			this._activeSelection.clear();
 			this._activeAreaSelection.clear();
-			this._activeEditMode.clear();
 		};
 		webContents.on('did-navigate', onNavigated);
 		this._register({ dispose: () => webContents.removeListener('did-navigate', onNavigated) });
@@ -273,6 +271,7 @@ export class BrowserViewInspector extends Disposable {
 			this._onDidSelectElement.fire(nodeData);
 		});
 		inspector.onDidRemoveElementComment(elementId => this._onDidRemoveElementComment.fire(elementId));
+		inspector.onDidCommitHtmlEditText(commit => this._onDidCommitHtmlEditText.fire(commit));
 
 		// When a frame's preload stops picking, stop all other frames too
 		inspector.onDidStopPicking(() => {
@@ -312,13 +311,16 @@ export class BrowserViewInspector extends Disposable {
 		// Element and area selection are mutually exclusive — enabling one
 		// cancels the other so both pickers never overlay the page at once.
 		this._activeAreaSelection.clear();
-		this._activeEditMode.clear();
 
 		const activeSelection = this._activeSelection.value;
 		const updatedOptions = activeSelection ? { ...activeSelection.options, ...options } : { mode: BrowserElementSelectionMode.Select, ...options };
 
 		if (activeSelection) {
+			const wasEditMode = activeSelection.options.mode === BrowserElementSelectionMode.Edit;
 			activeSelection.options = updatedOptions;
+			if (wasEditMode && updatedOptions.mode !== BrowserElementSelectionMode.Edit) {
+				this._finishEditMode();
+			}
 			try {
 				if (await this._startInspection(activeSelection, updatedOptions)) {
 					this._elementSelectionActive = true;
@@ -336,12 +338,16 @@ export class BrowserViewInspector extends Disposable {
 			options: updatedOptions,
 			dispose: () => {
 				if (this._activeSelection.value === selection) {
+					const wasHtmlEditMode = selection.options.mode === BrowserElementSelectionMode.Edit;
 					this._elementSelectionActive = false;
 					this._onDidChangeElementSelectionState.fire({ active: false, options: selection.options });
 					this._activeSelection.clearAndLeak();
 					void this._queueInspectionOperation(async () => {
 						await Promise.all([...this._registry.inspectors].map(i => i.stopInspection()));
 					}).catch(() => { });
+					if (wasHtmlEditMode) {
+						this._finishEditMode();
+					}
 				}
 			}
 		};
@@ -399,7 +405,6 @@ export class BrowserViewInspector extends Disposable {
 		// Element and area selection are mutually exclusive — enabling one
 		// cancels the other so both pickers never overlay the page at once.
 		this._activeSelection.clear();
-		this._activeEditMode.clear();
 
 		const mainFrame = this.browser.webContents.mainFrame;
 		const start = () => { mainFrame.postMessage('vscode:browserView:startAreaPicker', undefined); };
@@ -447,8 +452,7 @@ export class BrowserViewInspector extends Disposable {
 	}
 
 	/**
-	 * Toggle in-page text edit mode on the main frame.
-	 * Makes the page body contenteditable so text can be edited directly.
+	 * Toggle HTML visual edit mode on the main frame via element picking.
 	 */
 	async toggleEditMode(enabled?: boolean): Promise<void> {
 		const newEnabled = enabled ?? !this._editModeActive;
@@ -457,50 +461,45 @@ export class BrowserViewInspector extends Disposable {
 		}
 
 		if (!newEnabled) {
-			this._activeEditMode.clear();
+			this._activeSelection.clear();
+			return;
+		}
+
+		if (!isAssociatedHtmlResource(this.browser.associatedResource)) {
 			return;
 		}
 
 		this._activeSelection.clear();
 		this._activeAreaSelection.clear();
 
-		const webContents = this.browser.webContents;
-		const start = () => webContents.executeJavaScript('window.__vscode_helpers?.startEditMode?.()');
-		const stop = () => {
-			try {
-				return webContents.executeJavaScript('window.__vscode_helpers?.stopEditMode?.()');
-			} catch {
-				return Promise.resolve();
-			}
-		};
-
-		const editMode: IActiveEditMode = {
-			dispose: () => {
-				void stop().finally(() => this._finishEditMode());
-			}
-		};
-		this._activeEditMode.value = editMode;
-
-		try {
-			await start();
-			if (this._activeEditMode.value === editMode) {
-				this._editModeActive = true;
-				this._onDidChangeEditModeActive.fire(true);
-			}
-		} catch {
-			this._activeEditMode.clear();
+		await this.toggleElementSelection(true, { mode: BrowserElementSelectionMode.Edit, continuous: true });
+		if (
+			this._elementSelectionActive
+			&& this._activeSelection.value?.options.mode === BrowserElementSelectionMode.Edit
+		) {
+			this._editModeActive = true;
+			this._onDidChangeEditModeActive.fire(true);
 		}
 	}
 
 	private _finishEditMode(): void {
-		if (!this._editModeActive && !this._activeEditMode.value) {
+		if (!this._editModeActive) {
 			return;
 		}
-		const wasActive = this._editModeActive;
+		this.finishHtmlEditTextSession(true);
 		this._editModeActive = false;
-		this._activeEditMode.clearAndLeak();
-		if (wasActive) {
-			this._onDidChangeEditModeActive.fire(false);
+		this._onDidChangeEditModeActive.fire(false);
+	}
+
+	async applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void> {
+		for (const inspector of this._registry.inspectors) {
+			inspector.applyHtmlEditPreview(preview);
+		}
+	}
+
+	finishHtmlEditTextSession(commit: boolean): void {
+		for (const inspector of this._registry.inspectors) {
+			inspector.finishHtmlEditTextSession(commit);
 		}
 	}
 
@@ -523,7 +522,6 @@ export class BrowserViewInspector extends Disposable {
 				setTimeout(() => {
 					this._activeAreaSelection.clear();
 					this._activeSelection.clear();
-					this._activeEditMode.clear();
 					void this._queueInspectionOperation(async () => {
 						if (!this.browser.webContents.isDestroyed()) {
 							this.browser.webContents.focus();

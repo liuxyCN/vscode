@@ -56,6 +56,8 @@ import {
 	IBrowserDeviceProfile,
 	IBrowserViewPermissionRequestEvent,
 	IBrowserElementSelectionState,
+	IBrowserHtmlEditPreview,
+	IBrowserHtmlEditTextCommit,
 } from '../../../../platform/browserView/common/browserView.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { isLocalhostAuthority } from '../../../../platform/url/common/trustedDomains.js';
@@ -409,6 +411,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly onDidPickArea: Event<IBrowserViewRect | undefined>;
 	readonly onDidChangeAreaSelectionActive: Event<boolean>;
 	readonly onDidChangeEditModeActive: Event<boolean>;
+	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit>;
 	readonly onDidChangeContentFullscreenActive: Event<boolean>;
 	readonly onDidChangeDevice: Event<IBrowserDeviceProfile | undefined>;
 	readonly onDidChangeRemoteStatus: Event<boolean>;
@@ -441,6 +444,7 @@ export interface IBrowserViewModel extends IDisposable {
 	setElementComments(update: IBrowserElementCommentsUpdate): Promise<void>;
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
+	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void>;
 	toggleContentFullscreen(enabled?: boolean): Promise<void>;
 	setDevice(device: IBrowserDeviceProfile | undefined): Promise<void>;
 }
@@ -898,6 +902,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.toggleEditMode(this.id, enabled);
 	}
 
+	async applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void> {
+		return this.browserViewService.applyHtmlEditPreview(this.id, preview);
+	}
+
 	async toggleContentFullscreen(enabled?: boolean): Promise<void> {
 		return this.browserViewService.toggleContentFullscreen(this.id, enabled);
 	}
@@ -924,6 +932,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	get onDidChangeEditModeActive(): Event<boolean> {
 		return this.browserViewService.onDynamicDidChangeEditModeActive(this.id);
+	}
+
+	get onDidCommitHtmlEditText(): Event<IBrowserHtmlEditTextCommit> {
+		return this.browserViewService.onDynamicDidCommitHtmlEditText(this.id);
 	}
 
 	get onDidChangeContentFullscreenActive(): Event<boolean> {

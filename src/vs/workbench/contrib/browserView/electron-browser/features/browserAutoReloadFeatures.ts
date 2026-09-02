@@ -52,7 +52,11 @@ interface IBrowserAutoReloadService {
 	readonly onDidChangeState: Event<IBrowserAutoReloadStateChangeEvent>;
 	isEnabled(browserId: string): boolean;
 	setEnabled(browserId: string, enabled: boolean): void;
+	suppressAutoReloadForResource(resource: URI, durationMs?: number): void;
+	isAutoReloadSuppressed(resource: URI): boolean;
 }
+
+export { IBrowserAutoReloadService };
 
 export class BrowserAutoReloadWatcher extends Disposable {
 	private readonly _watcher = this._register(new MutableDisposable<DisposableStore>());
@@ -65,6 +69,7 @@ export class BrowserAutoReloadWatcher extends Disposable {
 		input: BrowserEditorInput,
 		enabled: boolean,
 		private readonly _fileService: IFileService,
+		private readonly _autoReloadService: IBrowserAutoReloadService,
 	) {
 		super();
 		this._enabled = enabled;
@@ -121,6 +126,9 @@ export class BrowserAutoReloadWatcher extends Disposable {
 		const watcher = store.add(this._fileService.createWatcher(uri, { recursive: false, excludes: [] }));
 		store.add(watcher.onDidChange(event => {
 			if (event.contains(uri, FileChangeType.UPDATED) || event.contains(uri, FileChangeType.ADDED)) {
+				if (this._autoReloadService.isAutoReloadSuppressed(uri)) {
+					return;
+				}
 				scheduler.schedule();
 			}
 		}));
@@ -129,6 +137,12 @@ export class BrowserAutoReloadWatcher extends Disposable {
 
 	private _reloadPendingChange(): void {
 		if (!this._enabled || !this._hasPendingChange || !this._model?.visible) {
+			return;
+		}
+
+		const uri = getFileUri(this._model.url);
+		if (uri && this._autoReloadService.isAutoReloadSuppressed(uri)) {
+			this._hasPendingChange = false;
 			return;
 		}
 
@@ -145,6 +159,7 @@ export class BrowserAutoReloadService extends Disposable implements IBrowserAuto
 
 	private readonly _watchers = new Map<string, { readonly input: BrowserEditorInput; readonly watcher: BrowserAutoReloadWatcher }>();
 	private readonly _overrides = new Map<string, boolean>();
+	private readonly _suppressedResources = new Map<string, number>();
 
 	constructor(
 		@IBrowserViewWorkbenchService private readonly _browserViewWorkbenchService: IBrowserViewWorkbenchService,
@@ -175,6 +190,24 @@ export class BrowserAutoReloadService extends Disposable implements IBrowserAuto
 		this._onDidChangeState.fire({ browserId, enabled });
 	}
 
+	suppressAutoReloadForResource(resource: URI, durationMs = 1000): void {
+		const key = resource.with({ query: null, fragment: null }).toString();
+		this._suppressedResources.set(key, Date.now() + durationMs);
+	}
+
+	isAutoReloadSuppressed(resource: URI): boolean {
+		const key = resource.with({ query: null, fragment: null }).toString();
+		const expiresAt = this._suppressedResources.get(key);
+		if (expiresAt === undefined) {
+			return false;
+		}
+		if (Date.now() > expiresAt) {
+			this._suppressedResources.delete(key);
+			return false;
+		}
+		return true;
+	}
+
 	private _updateBrowserViews(): void {
 		const browserViews = this._browserViewWorkbenchService.getKnownBrowserViews();
 
@@ -191,7 +224,7 @@ export class BrowserAutoReloadService extends Disposable implements IBrowserAuto
 
 		for (const [browserId, input] of browserViews) {
 			if (!this._watchers.has(browserId)) {
-				const watcher = new BrowserAutoReloadWatcher(input, this.isEnabled(browserId), this._fileService);
+				const watcher = new BrowserAutoReloadWatcher(input, this.isEnabled(browserId), this._fileService, this);
 				this._watchers.set(browserId, { input, watcher });
 			}
 		}

@@ -275,11 +275,23 @@ class WebContentsViewRendererFeature extends BrowserEditorContribution {
 		if (!this._model.visible) {
 			return;
 		}
+		const width = this._container?.clientWidth ?? 0;
+		const height = this._container?.clientHeight ?? 0;
+		if (width === 0 || height === 0) {
+			const handle = setTimeout(() => void this._doScreenshot(), 100);
+			this._screenshotHandle.value = toDisposable(() => clearTimeout(handle));
+			return;
+		}
 		try {
 			const screenshot = await this._model.captureScreenshot({ quality: 80 });
 			this._setBackgroundImage(screenshot);
 		} catch (error) {
-			this.logService.error('Failed to capture browser view screenshot', error);
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes('Failed to capture screenshot after')) {
+				this.logService.trace('Deferred browser view screenshot until the view is ready.', error);
+			} else {
+				this.logService.error('Failed to capture browser view screenshot', error);
+			}
 		}
 		const handle = setTimeout(() => void this._doScreenshot(), 1000);
 		this._screenshotHandle.value = toDisposable(() => clearTimeout(handle));

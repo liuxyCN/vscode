@@ -5,8 +5,8 @@
 
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
-import { BrowserElementSelectionMode, IElementData, IElementAncestor, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserViewTheme } from '../common/browserView.js';
-import { collapseToShorthands, formatMatchedStyles, keyComputedProperties, type IMatchedStyles } from '../common/cssHelpers.js';
+import { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserElementSelectionOptions, IBrowserHtmlEditPreview, IBrowserHtmlEditTextCommit, IBrowserViewTheme, IElementData, IElementAncestor } from '../common/browserView.js';
+import { collapseToShorthands, extractAuthorStyleValues, formatMatchedStyles, keyComputedProperties, type IMatchedStyles } from '../common/cssHelpers.js';
 import { ICDPConnection } from '../common/cdp/types.js';
 
 export interface IFrameElementHandle extends IDisposable {
@@ -119,6 +119,9 @@ export class BrowserViewFrameInspector extends Disposable {
 	private readonly _onDidStopPicking = this._register(new Emitter<void>());
 	readonly onDidStopPicking: Event<void> = this._onDidStopPicking.event;
 
+	private readonly _onDidCommitHtmlEditText = this._register(new Emitter<IBrowserHtmlEditTextCommit>());
+	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit> = this._onDidCommitHtmlEditText.event;
+
 	private _isPaused = false;
 	private readonly _activeInspection = this._register(new MutableDisposable<IActiveInspection>());
 
@@ -185,13 +188,18 @@ export class BrowserViewFrameInspector extends Disposable {
 		}));
 
 		// Listen for element-picked IPC from this frame's preload
-		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string }) => {
+		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string; domPath?: string }) => {
 			if (!result?.elementId || event.senderFrame !== this.frame) {
 				return;
 			}
 			try {
 				const nodeData = await this.extractNodeDataById(result.elementId);
-				this._onDidInspectElement.fire({ ...nodeData, elementId: result.elementId, comment: result.comment });
+				this._onDidInspectElement.fire({
+					...nodeData,
+					elementId: result.elementId,
+					comment: result.comment,
+					domPath: result.domPath,
+				});
 			} catch {
 				this._updateElementComments({ pendingCommentIdsToDiscard: [result.elementId] });
 				// Best effort; user can re-pick.
@@ -216,6 +224,15 @@ export class BrowserViewFrameInspector extends Disposable {
 		};
 		frame.ipc.on('vscode:browserView:elementPickStopped', onPickStopped);
 		this._register({ dispose: () => frame.ipc.removeListener('vscode:browserView:elementPickStopped', onPickStopped) });
+
+		const onHtmlEditTextCommit = (event: Electron.IpcMainEvent, result: { domPath?: string; value?: string }) => {
+			if (event.senderFrame !== this.frame || !result?.domPath) {
+				return;
+			}
+			this._onDidCommitHtmlEditText.fire({ domPath: result.domPath, value: result.value ?? '' });
+		};
+		frame.ipc.on('vscode:browserView:htmlEditTextCommit', onHtmlEditTextCommit);
+		this._register({ dispose: () => frame.ipc.removeListener('vscode:browserView:htmlEditTextCommit', onHtmlEditTextCommit) });
 
 		this._enableDomains().catch(() => { });
 	}
@@ -242,6 +259,20 @@ export class BrowserViewFrameInspector extends Disposable {
 	 */
 	setTheme(theme: IBrowserViewTheme): void {
 		this.frame.postMessage('vscode:browserView:setTheme', theme);
+	}
+
+	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): void {
+		if (this.frame.isDestroyed()) {
+			return;
+		}
+		this.frame.postMessage('vscode:browserView:editPreview', preview);
+	}
+
+	finishHtmlEditTextSession(commit: boolean): void {
+		if (this.frame.isDestroyed()) {
+			return;
+		}
+		this.frame.postMessage('vscode:browserView:editTextFinish', { commit });
 	}
 
 	/**
@@ -462,6 +493,7 @@ export async function extractNodeData(connection: ICDPConnection, id: { backendN
 	}
 
 	const { rulesText, referencedVars, authorPropertyNames, userAgentPropertyNames } = formatMatchedStyles(matched as IMatchedStyles);
+	const authorStyles = extractAuthorStyleValues(matched as IMatchedStyles);
 	const { outerHTML } = await connection.sendCommand('DOM.getOuterHTML', { nodeId }) as { outerHTML: string };
 	if (!outerHTML) {
 		throw new Error('Failed to get outerHTML.');
@@ -526,6 +558,21 @@ export async function extractNodeData(connection: ICDPConnection, id: { backendN
 		}
 	} catch { }
 
+	let innerText: string | undefined;
+	try {
+		const { object } = await connection.sendCommand('DOM.resolveNode', { nodeId }) as { object?: { objectId?: string } };
+		if (object?.objectId) {
+			const { result } = await connection.sendCommand('Runtime.callFunctionOn', {
+				objectId: object.objectId,
+				functionDeclaration: 'function() { return (this.textContent || "").trim(); }',
+				returnByValue: true,
+			}) as { result: { value?: string } };
+			if (typeof result.value === 'string') {
+				innerText = result.value;
+			}
+		}
+	} catch { }
+
 	return {
 		outerHTML,
 		computedStyle,
@@ -533,7 +580,9 @@ export async function extractNodeData(connection: ICDPConnection, id: { backendN
 		ancestors,
 		attributes,
 		computedStyles,
-		dimensions: { top: y, left: x, width, height }
+		authorStyles,
+		dimensions: { top: y, left: x, width, height },
+		innerText,
 	};
 }
 
