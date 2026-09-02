@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>HTML Edit 属性测试页</title>
+	<style>
+		body {
+			margin: 0;
+			padding: 32px;
+			background-color: #eef1f6;
+			color: #1a1a1a;
+			font-family: system-ui, sans-serif;
+			line-height: 1.5;
+		}
+
+		.page-title {
+			margin: 0 0 8px;
+			font-size: 28px;
+			font-weight: 700;
+		}
+
+		.page-desc {
+			margin: 0 0 32px;
+			max-width: 720px;
+			color: #4b5563;
+		}
+
+		.section {
+			margin-bottom: 40px;
+		}
+
+		.section-label {
+			margin: 0 0 12px;
+			font-size: 12px;
+			font-weight: 600;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: #6b7280;
+		}
+
+		.canvas {
+			padding: 20px;
+			border: 1px dashed #cbd5e1;
+			border-radius: 12px;
+			background: #ffffff;
+		}
+	</style>
+</head>
+<body>
+	<h1 class="page-title">HTML Edit 属性测试页</h1>
+	<p class="page-desc">
+		在 Integrated Browser 中打开此文件，进入 Edit Mode，依次点击各区块元素，验证 Content / Parameters 面板的所有字段。
+		Save 简写测试：见「CSS 简写合并」区块 — 每次只改一项后 Save，检查源文件是否保持/正确更新简写（不应出现冗余 longhand）。
+	</p>
+
+	<!-- kind: text — 文本、字体、颜色 -->
+	<section class="section">
+		<p class="section-label">Text · 文本与排版</p>
+		<div class="canvas">
+			<p
+				id="text-sample"
+				style="
+					color: rgb(15, 23, 42);
+					font-family: Georgia, serif;
+					font-size: 20px;
+					font-weight: 400;
+					line-height: 1.6;
+					letter-spacing: 0.5px;
+					margin: 16px 8px 12px 24px;
+					padding: 12px 16px;
+					background-color: rgb(241, 245, 249);
+					border: 1px solid rgb(203, 213, 225);
+					border-radius: 8px;
+					opacity: 1;
+				"
+			>
+				这是一段可编辑文本。测试 Text、Color、Font、Font size、Weight、Line height、Tracking、Background、Opacity、Border、Radius、Padding、Margin。
+			</p>
+		</div>
+	</section>
+
+	<!-- kind: link -->
+	<section class="section">
+		<p class="section-label">Link · 链接</p>
+		<div class="canvas">
+			<a
+				id="link-sample"
+				href="https://example.com/docs/html-edit"
+				style="
+					display: inline-block;
+					color: rgb(37, 99, 235);
+					font-family: Inter, system-ui, sans-serif;
+					font-size: 16px;
+					font-weight: 600;
+					line-height: 1.4;
+					letter-spacing: 0;
+					text-decoration: none;
+					padding: 10px 14px;
+					margin: 8px 16px 12px 4px;
+					background-color: rgb(239, 246, 255);
+					border: 2px solid rgb(59, 130, 246);
+					border-radius: 6px;
+				"
+			>
+				打开 Example 文档
+			</a>
+		</div>
+	</section>
+
+	<!-- kind: image -->
+	<section class="section">
+		<p class="section-label">Image · 图片</p>
+		<div class="canvas">
+			<img
+				id="image-sample"
+				src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 320 180'%3E%3Crect width='320' height='180' fill='%23dbeafe'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%232563eb' font-family='system-ui' font-size='18'%3ETest Image%3C/text%3E%3C/svg%3E"
+				alt="HTML Edit 测试图片"
+				width="320"
+				height="180"
+				style="
+					display: block;
+					border: 3px solid rgb(99, 102, 241);
+					border-radius: 12px;
+					opacity: 0.95;
+					margin: 0;
+					padding: 4px;
+					background-color: rgb(238, 242, 255);
+				"
+			>
+		</div>
+	</section>
+
+	<!-- kind: container — flex 水平 -->
+	<section class="section">
+		<p class="section-label">Container · Flex 水平布局</p>
+		<div class="canvas">
+			<div
+				id="flex-row-sample"
+				style="
+					display: flex;
+					flex-direction: row;
+					justify-content: space-between;
+					align-items: center;
+					gap: 16px;
+					width: 100%;
+					max-width: 560px;
+					min-height: 80px;
+					padding: 16px 20px;
+					margin: 10px 24px 14px 6px;
+					background-color: rgb(254, 243, 199);
+					border: 2px dashed rgb(245, 158, 11);
+					border-radius: 10px;
+					opacity: 1;
+				"
+			>
+				<span style="font-size: 14px; font-weight: 600;">Item A</span>
+				<span style="font-size: 14px; font-weight: 600;">Item B</span>
+				<span style="font-size: 14px; font-weight: 600;">Item C</span>
+			</div>
+		</div>
+	</section>
+
+	<!-- kind: container — flex 垂直 -->
+	<section class="section">
+		<p class="section-label">Container · Flex 垂直布局</p>
+		<div class="canvas">
+			<div
+				id="flex-column-sample"
+				style="
+					display: flex;
+					flex-direction: column;
+					justify-content: flex-start;
+					align-items: stretch;
+					gap: 8px;
+					width: 280px;
+					height: 180px;
+					padding-top: 12px;
+					padding-right: 16px;
+					padding-bottom: 12px;
+					padding-left: 16px;
+					margin-top: 0;
+					margin-right: 0;
+					margin-bottom: 0;
+					margin-left: 0;
+					background-color: rgb(220, 252, 231);
+					border: 1px solid rgb(34, 197, 94);
+					border-radius: 16px;
+				"
+			>
+				<div style="padding: 8px; background: #fff; border-radius: 4px;">Row 1</div>
+				<div style="padding: 8px; background: #fff; border-radius: 4px;">Row 2</div>
+				<div style="padding: 8px; background: #fff; border-radius: 4px;">Row 3</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- kind: container — 含嵌套 markup，outerHTML 编辑 -->
+	<section class="section">
+		<p class="section-label">Container · 嵌套 HTML（outerHTML）</p>
+		<div class="canvas">
+			<div
+				id="nested-container-sample"
+				class="tagline"
+				data-od-id="cover-tagline"
+				style="
+					width: 448px;
+					height: 29px;
+					color: rgb(15, 15, 15);
+					font-family: 'JetBrains Mono', monospace;
+					font-size: 13px;
+					font-weight: 500;
+					line-height: normal;
+					letter-spacing: 2px;
+					padding: 0;
+					margin: 0;
+					background-color: transparent;
+					border: 0 solid rgb(15, 15, 15);
+					border-radius: 0;
+					opacity: 1;
+				"
+			>
+				<span></span>RIDGELINE&nbsp;·&nbsp;DESIGN&nbsp;·&nbsp;2026
+			</div>
+		</div>
+	</section>
+
+	<!-- kind: container — section/article -->
+	<section class="section">
+		<p class="section-label">Container · Section 卡片</p>
+		<div class="canvas">
+			<section
+				id="section-sample"
+				style="
+					display: block;
+					width: 100%;
+					max-width: 480px;
+					min-height: 120px;
+					padding: 24px;
+					margin: 0;
+					background-color: rgb(255, 255, 255);
+					border: 1px solid rgb(229, 231, 235);
+					border-radius: 20px;
+					opacity: 1;
+				"
+			>
+				<h2 style="margin: 0 0 8px; font-size: 18px;">卡片标题</h2>
+				<p style="margin: 0; color: rgb(107, 114, 128); font-size: 14px;">点击 section 测试 container kind、Dimensions、Spacing、Border。</p>
+			</section>
+		</div>
+	</section>
+
+	<!-- 透明背景测试 -->
+	<section class="section">
+		<p class="section-label">Background · 透明背景</p>
+		<div class="canvas" style="background: repeating-linear-gradient(45deg, #e5e7eb 0 10px, #f9fafb 10px 20px);">
+			<div
+				id="transparent-bg-sample"
+				style="
+					display: inline-block;
+					padding: 16px 24px;
+					color: rgb(17, 24, 39);
+					font-size: 15px;
+					background-color: transparent;
+					border: 1px dotted rgb(156, 163, 175);
+					border-radius: 4px;
+				"
+			>
+				无背景色元素 — Background 应显示为空 / transparent
+			</div>
+		</div>
+	</section>
+
+	<!-- Save · CSS 简写合并（每次只改一项 → Save → 检查源文件 style） -->
+	<section class="section">
+		<p class="section-label">Save · CSS 简写合并</p>
+		<div class="canvas" style="display: flex; flex-direction: column; gap: 16px;">
+			<p style="margin: 0; color: #6b7280; font-size: 13px; max-width: 720px;">
+				以下元素 inline style 刻意使用简写。选中后<strong>只改标注的那一项</strong>，Save，确认源文件未展开为多余 longhand。
+			</p>
+
+			<div
+				id="shorthand-margin-sample"
+				style="
+					display: inline-block;
+					color: rgb(30, 64, 175);
+					font-size: 14px;
+					margin: 20px 40px 10px 8px;
+					padding: 8px 12px;
+					background-color: rgb(219, 234, 254);
+					border: 1px solid rgb(147, 197, 253);
+					border-radius: 6px;
+				"
+			>
+				margin 简写 · 只改 Margin Top（期望 <code>margin: 新值 40px 10px 8px</code>）
+			</div>
+
+			<div
+				id="shorthand-padding-sample"
+				style="
+					display: inline-block;
+					color: rgb(21, 128, 61);
+					font-size: 14px;
+					margin: 0;
+					padding: 12px 24px;
+					background-color: rgb(220, 252, 231);
+					border: 1px solid rgb(134, 239, 172);
+					border-radius: 6px;
+				"
+			>
+				padding 简写 · 只改 Padding Left（期望 <code>padding: 12px 新值</code>）
+			</div>
+
+			<div
+				id="shorthand-border-sample"
+				style="
+					display: inline-block;
+					color: rgb(124, 58, 237);
+					font-size: 14px;
+					margin: 0;
+					padding: 10px 16px;
+					background-color: rgb(237, 233, 254);
+					border: 2px solid rgb(124, 58, 237);
+					border-radius: 8px;
+				"
+			>
+				border 简写 · 只改 Border color（期望仍为一行 <code>border: 2px solid 新色</code>）
+			</div>
+
+			<div
+				id="shorthand-border-width-sample"
+				style="
+					display: inline-block;
+					color: rgb(194, 65, 12);
+					font-size: 14px;
+					margin: 0;
+					padding: 10px 16px;
+					background-color: rgb(255, 237, 213);
+					border: 1px dashed rgb(234, 88, 12);
+					border-radius: 6px;
+				"
+			>
+				border 简写 · 只改 Border width（期望 <code>border: 新宽度 dashed …</code>）
+			</div>
+
+			<div
+				id="shorthand-radius-sample"
+				style="
+					display: inline-block;
+					color: rgb(190, 24, 93);
+					font-size: 14px;
+					margin: 0;
+					padding: 10px 18px;
+					background-color: rgb(252, 231, 243);
+					border: 1px solid rgb(244, 114, 182);
+					border-radius: 8px 16px;
+				"
+			>
+				border-radius 简写 · 只改 Radius（期望 <code>border-radius: 新值</code>，无四角 longhand）
+			</div>
+
+			<div
+				id="shorthand-background-sample"
+				style="
+					display: inline-block;
+					color: rgb(15, 23, 42);
+					font-size: 14px;
+					margin: 0;
+					padding: 10px 18px;
+					background: rgb(254, 249, 195);
+					border: 1px solid rgb(250, 204, 21);
+					border-radius: 6px;
+				"
+			>
+				background 简写（纯色）· 只改 Background（期望 <code>background: 新色</code>，非 background-color 叠加）
+			</div>
+
+			<div
+				id="longhand-spacing-sample"
+				style="
+					display: inline-block;
+					color: rgb(22, 101, 52);
+					font-size: 14px;
+					margin-top: 4px;
+					margin-right: 20px;
+					margin-bottom: 12px;
+					margin-left: 6px;
+					padding-top: 6px;
+					padding-right: 18px;
+					padding-bottom: 14px;
+					padding-left: 10px;
+					background-color: rgb(240, 253, 244);
+					border: 1px solid rgb(74, 222, 128);
+					border-radius: 4px;
+				"
+			>
+				margin/padding longhand · 只改 Margin Right 或 Padding Bottom（期望 Save 后折叠为简写）
+			</div>
+
+			<div
+				id="shorthand-combined-sample"
+				style="
+					display: block;
+					max-width: 520px;
+					color: rgb(51, 65, 85);
+					font-size: 14px;
+					margin: 16px 32px 8px 12px;
+					padding: 14px 22px;
+					background-color: rgb(248, 250, 252);
+					border: 2px solid rgb(100, 116, 139);
+					border-radius: 10px;
+				"
+			>
+				组合简写 · 依次单独修改 margin / padding / border / radius / background 各一项，确认互不破坏其他简写。
+			</div>
+		</div>
+	</section>
+
+	<!-- Page mode：点击空白或 body -->
+	<section class="section">
+		<p class="section-label">Page · 页面模式</p>
+		<div class="canvas">
+			<p style="margin: 0; color: #6b7280; font-size: 13px;">
+				点击预览区空白处（不选中任何元素）可进入 Page 模式，测试 body 级样式保存。
+			</p>
+		</div>
+	</section>
+</body>
+</html>
