@@ -50,6 +50,7 @@ export enum BrowserViewCommandId {
 	AddScreenshotToChat = `${commandPrefix}.addScreenshotToChat`,
 	AddAreaScreenshotToChat = `${commandPrefix}.addAreaScreenshotToChat`,
 	AddFullPageScreenshotToChat = `${commandPrefix}.addFullPageScreenshotToChat`,
+	CaptureScreenshot = `${commandPrefix}.captureScreenshot`,
 
 	// Dev Tools
 	ToggleDevTools = `${commandPrefix}.toggleDevTools`,

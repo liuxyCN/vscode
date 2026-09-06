@@ -104,6 +104,8 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditNestedMarkup'
 	| 'htmlEditRemoveRoot'
 	| 'htmlEditRemoveLast'
+	| 'captureScreenshotNoPage'
+	| 'captureScreenshotNoActiveBrowser'
 > = {
 	editPage: { en: 'Edit Page', 'zh-cn': '\u7F16\u8F91\u9875\u9762', 'zh-Hans': '\u7F16\u8F91\u9875\u9762' },
 	stopEditMode: { en: 'Stop Edit Mode', 'zh-cn': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F' },
@@ -203,6 +205,8 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditNestedMarkup: { en: 'This element contains nested markup. Edit its text in the HTML source instead.', 'zh-cn': '\u8BE5\u5143\u7D20\u5305\u542B\u5D4C\u5957\u6807\u8BB0\u3002\u8BF7\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u7F16\u8F91\u5176\u6587\u672C\u3002', 'zh-Hans': '\u8BE5\u5143\u7D20\u5305\u542B\u5D4C\u5957\u6807\u8BB0\u3002\u8BF7\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u7F16\u8F91\u5176\u6587\u672C\u3002' },
 	htmlEditRemoveRoot: { en: 'Cannot remove the root element.', 'zh-cn': '\u65E0\u6CD5\u5220\u9664\u6839\u5143\u7D20\u3002', 'zh-Hans': '\u65E0\u6CD5\u5220\u9664\u6839\u5143\u7D20\u3002' },
 	htmlEditRemoveLast: { en: 'Cannot remove the last rendered element in the document.', 'zh-cn': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002', 'zh-Hans': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002' },
+	captureScreenshotNoPage: { en: 'No browser page found with ID {0}', 'zh-cn': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762', 'zh-Hans': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762' },
+	captureScreenshotNoActiveBrowser: { en: 'No active Integrated Browser editor', 'zh-cn': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668', 'zh-Hans': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668' },
 };
 
 type BrowserViewLabelKey = keyof typeof browserViewLabels;

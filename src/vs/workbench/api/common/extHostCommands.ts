@@ -175,6 +175,22 @@ export class ExtHostCommands implements ExtHostCommandsShape {
 		return this._doExecuteCommand(id, args, true);
 	}
 
+	/**
+	 * Commands that return binary data wrap the payload in {@link SerializableObjectWithBuffers}.
+	 * Convert nested {@link VSBuffer} values to `Uint8Array` for extension-facing APIs.
+	 */
+	private _massageSerializableCommandResult<T>(result: T): T {
+		if (!(result instanceof SerializableObjectWithBuffers)) {
+			return result;
+		}
+		return cloneAndChange(result.value, value => {
+			if (value instanceof VSBuffer) {
+				return value.clone().buffer;
+			}
+			return value;
+		}) as T;
+	}
+
 	private async _doExecuteCommand<T>(id: string, args: unknown[], retry: boolean): Promise<T> {
 
 		if (this._commands.has(id)) {
@@ -214,7 +230,7 @@ export class ExtHostCommands implements ExtHostCommandsShape {
 
 			try {
 				const result = await this.#proxy.$executeCommand(id, hasBuffers ? new SerializableObjectWithBuffers(toArgs) : toArgs, retry);
-				return revive<any>(result);
+				return this._massageSerializableCommandResult(revive<any>(result));
 			} catch (e) {
 				// Rerun the command when it wasn't known, had arguments, and when retry
 				// is enabled. We do this because the command might be registered inside

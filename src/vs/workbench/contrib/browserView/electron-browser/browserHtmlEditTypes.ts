@@ -254,13 +254,39 @@ export function normalizeBackgroundColorValue(value: string | undefined): string
 	return trimmed;
 }
 
+const unresolvedCssReferenceRegex = /\bvar\s*\(/i;
+
+function containsUnresolvedCssReference(value: string | undefined): boolean {
+	return !!value && unresolvedCssReferenceRegex.test(value);
+}
+
+/**
+ * Prefer the computed value when inline/author values still contain unresolved
+ * CSS references such as `var(--token)`.
+ */
+function resolveStyleValue(raw: string | undefined, computed: string | undefined): string {
+	if (raw !== undefined) {
+		if (containsUnresolvedCssReference(raw)) {
+			return computed ?? raw;
+		}
+		return raw;
+	}
+	return computed ?? '';
+}
+
 function readLonghandStyle(
 	inline: Record<string, string>,
 	author: Record<string, string>,
 	computed: Record<string, string>,
 	cssName: string,
 ): string {
-	return inline[cssName] ?? author[cssName] ?? computed[cssName] ?? '';
+	if (inline[cssName] !== undefined) {
+		return resolveStyleValue(inline[cssName], computed[cssName]);
+	}
+	if (author[cssName] !== undefined) {
+		return resolveStyleValue(author[cssName], computed[cssName]);
+	}
+	return computed[cssName] ?? '';
 }
 
 const BORDER_STYLE_KEYWORDS = new Set([
@@ -399,18 +425,19 @@ function readBorderStyle(
 	author: Record<string, string>,
 	computed: Record<string, string>,
 ): string {
-	if (inline['border-style']) {
-		return inline['border-style'];
+	const computedStyle = computed['border-style'];
+	if (inline['border-style'] !== undefined) {
+		return resolveStyleValue(inline['border-style'], computedStyle);
 	}
 	const fromShorthand = readBorderStyleFromInlineShorthand(inline);
 	if (fromShorthand) {
-		return fromShorthand;
+		return resolveStyleValue(fromShorthand, computedStyle);
 	}
-	if (author['border-style']) {
-		return author['border-style'];
+	if (author['border-style'] !== undefined) {
+		return resolveStyleValue(author['border-style'], computedStyle);
 	}
-	if (computed['border-style']) {
-		return computed['border-style'];
+	if (computedStyle) {
+		return computedStyle;
 	}
 	return readUniformComputedSide(computed, 'style');
 }
@@ -420,18 +447,19 @@ function readBorderColor(
 	author: Record<string, string>,
 	computed: Record<string, string>,
 ): string {
-	if (inline['border-color']) {
-		return inline['border-color'];
+	const computedColor = computed['border-color'];
+	if (inline['border-color'] !== undefined) {
+		return resolveStyleValue(inline['border-color'], computedColor);
 	}
 	const fromShorthand = readBorderColorFromInlineShorthand(inline);
 	if (fromShorthand) {
-		return fromShorthand;
+		return resolveStyleValue(fromShorthand, computedColor);
 	}
-	if (author['border-color']) {
-		return author['border-color'];
+	if (author['border-color'] !== undefined) {
+		return resolveStyleValue(author['border-color'], computedColor);
 	}
-	if (computed['border-color']) {
-		return computed['border-color'];
+	if (computedColor) {
+		return computedColor;
 	}
 	return readUniformComputedSide(computed, 'color');
 }
@@ -468,22 +496,22 @@ export function readStyleValue(
 ): string {
 	const cssName = STYLE_KEY_TO_CSS[key];
 	if (key === 'backgroundColor') {
+		const computedNorm = normalizeBackgroundColorValue(computed[cssName]);
 		const inlineLonghand = inline[cssName];
-		if (inlineLonghand) {
-			return normalizeBackgroundColorValue(inlineLonghand);
+		if (inlineLonghand !== undefined) {
+			return normalizeBackgroundColorValue(resolveStyleValue(inlineLonghand, computed[cssName]));
 		}
 		if (inline['background']) {
-			return normalizeBackgroundColorValue(computed[cssName]);
+			return computedNorm;
 		}
 		const authorVal = author[cssName];
-		if (authorVal) {
-			const computedNorm = normalizeBackgroundColorValue(computed[cssName]);
+		if (authorVal !== undefined) {
 			if (!computedNorm) {
 				return '';
 			}
-			return normalizeBackgroundColorValue(authorVal);
+			return normalizeBackgroundColorValue(resolveStyleValue(authorVal, computed[cssName]));
 		}
-		return normalizeBackgroundColorValue(computed[cssName]);
+		return computedNorm;
 	}
 	if (key === 'color') {
 		return readLonghandStyle(inline, author, computed, cssName);

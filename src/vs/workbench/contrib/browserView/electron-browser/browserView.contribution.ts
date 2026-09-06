@@ -33,6 +33,7 @@ import './features/browserPermissionsFeature.js';
 import './features/browserDataStorageFeatures.js';
 import './features/browserDevToolsFeature.js';
 import './features/browserEditorChatFeatures.js';
+import './features/browserCaptureScreenshotFeature.js';
 import './features/browserEditorErrorFeatures.js';
 import './features/browserEditorZoomFeature.js';
 import './features/browserEditorEmulationFeatures.js';
@@ -119,7 +120,7 @@ class BrowserEditorResolverContribution implements IWorkbenchContribution {
 				{
 					id: BrowserEditorInput.EDITOR_ID,
 					label: localize('browser.htmlEditorLabel', "Integrated Browser"),
-					priority: RegisteredEditorPriority.option
+					priority: RegisteredEditorPriority.default
 				},
 				{
 					canSupportResource: resource => resource.scheme === Schemas.file,
