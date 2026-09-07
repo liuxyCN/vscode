@@ -105,7 +105,7 @@ export interface IElementData {
 	readonly url?: string;
 	readonly elementId?: string;
 	readonly comment?: string;
-	/** Stable DOM child-index path (`path-0-1-2`) for mapping live picks back to source HTML. */
+	/** Stable runtime locator for live preview (`path-0-1-2`). DC save resolves `data-dc-tpl` separately in the workbench layer. */
 	readonly domPath?: string;
 	readonly outerHTML: string;
 	readonly computedStyle: string;
@@ -813,6 +813,21 @@ export interface IBrowserViewService {
 	 * Apply live HTML edit preview updates to the in-page DOM (styles, text, attributes).
 	 */
 	applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void>;
+
+	/**
+	 * Fetch the encoded, `data-dc-tpl`-annotated template from a DC runtime page (`window.__dcAnnotatedTemplate`).
+	 */
+	getDcAnnotatedTemplate(id: string, componentName: string): Promise<string | null>;
+
+	/**
+	 * Read the DC root component name from the loaded page (`window.__dcRootName`).
+	 */
+	getDcRootName(id: string): Promise<string | null>;
+
+	/**
+	 * Push an updated decoded template into a running DC runtime (`window.__dcUpdate`).
+	 */
+	updateDcTemplate(id: string, componentName: string, templateHtml: string): Promise<void>;
 
 	/**
 	 * Expand the browser view to fill the host window's client area.

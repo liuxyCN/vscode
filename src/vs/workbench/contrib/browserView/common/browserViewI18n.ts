@@ -8,6 +8,9 @@ import { ILocalizedString, miniActionTitle, miniLabel, MiniI18nTable } from '../
 const browserViewLabels: MiniI18nTable<
 	| 'editPage'
 	| 'stopEditMode'
+	| 'editModeActive'
+	| 'htmlEditAvailable'
+	| 'htmlEditSaveSource'
 	| 'newTab'
 	| 'contentFullscreen'
 	| 'exitContentFullscreen'
@@ -101,14 +104,20 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditSaveSuccess'
 	| 'htmlEditParseFailed'
 	| 'htmlEditElementNotFound'
+	| 'htmlEditDuplicateTplId'
 	| 'htmlEditNestedMarkup'
 	| 'htmlEditRemoveRoot'
 	| 'htmlEditRemoveLast'
+	| 'htmlEditDcNestedComponent'
+	| 'htmlEditDcTemplateMissing'
 	| 'captureScreenshotNoPage'
 	| 'captureScreenshotNoActiveBrowser'
 > = {
 	editPage: { en: 'Edit Page', 'zh-cn': '\u7F16\u8F91\u9875\u9762', 'zh-Hans': '\u7F16\u8F91\u9875\u9762' },
 	stopEditMode: { en: 'Stop Edit Mode', 'zh-cn': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F' },
+	editModeActive: { en: 'Whether in-page edit mode is active', 'zh-cn': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001', 'zh-Hans': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001' },
+	htmlEditAvailable: { en: 'Whether HTML visual edit mode is available for the current browser tab', 'zh-cn': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F' },
+	htmlEditSaveSource: { en: 'Browser HTML Edit', 'zh-cn': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91', 'zh-Hans': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91' },
 	newTab: { en: 'New Tab', 'zh-cn': '\u65B0\u5EFA\u6807\u7B7E\u9875', 'zh-Hans': '\u65B0\u5EFA\u6807\u7B7E\u9875' },
 	contentFullscreen: { en: 'Fullscreen', 'zh-cn': '\u5168\u5C4F', 'zh-Hans': '\u5168\u5C4F' },
 	exitContentFullscreen: { en: 'Exit Fullscreen', 'zh-cn': '\u9000\u51FA\u5168\u5C4F', 'zh-Hans': '\u9000\u51FA\u5168\u5C4F' },
@@ -202,9 +211,12 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditSaveSuccess: { en: 'Saved successfully', 'zh-cn': '\u4FDD\u5B58\u6210\u529F', 'zh-Hans': '\u4FDD\u5B58\u6210\u529F' },
 	htmlEditParseFailed: { en: 'Could not parse HTML source.', 'zh-cn': '\u65E0\u6CD5\u89E3\u6790 HTML \u6E90\u6587\u4EF6\u3002', 'zh-Hans': '\u65E0\u6CD5\u89E3\u6790 HTML \u6E90\u6587\u4EF6\u3002' },
 	htmlEditElementNotFound: { en: 'Selected element was not found in the HTML source.', 'zh-cn': '\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u627E\u4E0D\u5230\u6240\u9009\u5143\u7D20\u3002', 'zh-Hans': '\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u627E\u4E0D\u5230\u6240\u9009\u5143\u7D20\u3002' },
+	htmlEditDuplicateTplId: { en: 'Multiple elements share the same template id in the HTML source.', 'zh-cn': 'HTML \u6E90\u6587\u4EF6\u4E2D\u6709\u591A\u4E2A\u5143\u7D20\u4F7F\u7528\u4E86\u76F8\u540C\u7684\u6A21\u677F id\u3002', 'zh-Hans': 'HTML \u6E90\u6587\u4EF6\u4E2D\u6709\u591A\u4E2A\u5143\u7D20\u4F7F\u7528\u4E86\u76F8\u540C\u7684\u6A21\u677F id\u3002' },
 	htmlEditNestedMarkup: { en: 'This element contains nested markup. Edit its text in the HTML source instead.', 'zh-cn': '\u8BE5\u5143\u7D20\u5305\u542B\u5D4C\u5957\u6807\u8BB0\u3002\u8BF7\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u7F16\u8F91\u5176\u6587\u672C\u3002', 'zh-Hans': '\u8BE5\u5143\u7D20\u5305\u542B\u5D4C\u5957\u6807\u8BB0\u3002\u8BF7\u5728 HTML \u6E90\u6587\u4EF6\u4E2D\u7F16\u8F91\u5176\u6587\u672C\u3002' },
 	htmlEditRemoveRoot: { en: 'Cannot remove the root element.', 'zh-cn': '\u65E0\u6CD5\u5220\u9664\u6839\u5143\u7D20\u3002', 'zh-Hans': '\u65E0\u6CD5\u5220\u9664\u6839\u5143\u7D20\u3002' },
 	htmlEditRemoveLast: { en: 'Cannot remove the last rendered element in the document.', 'zh-cn': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002', 'zh-Hans': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002' },
+	htmlEditDcNestedComponent: { en: 'Edit nested components from their own .dc.html file.', 'zh-cn': '\u8BF7\u5728\u5BF9\u5E94\u7684 .dc.html \u6587\u4EF6\u4E2D\u7F16\u8F91\u5D4C\u5957\u7EC4\u4EF6\u3002', 'zh-Hans': '\u8BF7\u5728\u5BF9\u5E94\u7684 .dc.html \u6587\u4EF6\u4E2D\u7F16\u8F91\u5D4C\u5957\u7EC4\u4EF6\u3002' },
+	htmlEditDcTemplateMissing: { en: 'Could not find <x-dc> template in the source file.', 'zh-cn': '\u5728\u6E90\u6587\u4EF6\u4E2D\u672A\u627E\u5230 <x-dc> \u6A21\u677F\u3002', 'zh-Hans': '\u5728\u6E90\u6587\u4EF6\u4E2D\u672A\u627E\u5230 <x-dc> \u6A21\u677F\u3002' },
 	captureScreenshotNoPage: { en: 'No browser page found with ID {0}', 'zh-cn': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762', 'zh-Hans': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762' },
 	captureScreenshotNoActiveBrowser: { en: 'No active Integrated Browser editor', 'zh-cn': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668', 'zh-Hans': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668' },
 };

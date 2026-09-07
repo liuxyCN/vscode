@@ -188,14 +188,22 @@ export class BrowserViewFrameInspector extends Disposable {
 		}));
 
 		// Listen for element-picked IPC from this frame's preload
-		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string; domPath?: string }) => {
+		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string; domPath?: string; dcTplId?: string; dcComponentName?: string }) => {
 			if (!result?.elementId || event.senderFrame !== this.frame) {
 				return;
 			}
 			try {
 				const nodeData = await this.extractNodeDataById(result.elementId);
+				const attributes = { ...nodeData.attributes };
+				if (result.dcTplId) {
+					attributes['data-dc-tpl'] = result.dcTplId;
+				}
+				if (result.dcComponentName) {
+					attributes['data-sc-name'] = result.dcComponentName;
+				}
 				this._onDidInspectElement.fire({
 					...nodeData,
+					attributes,
 					elementId: result.elementId,
 					comment: result.comment,
 					domPath: result.domPath,

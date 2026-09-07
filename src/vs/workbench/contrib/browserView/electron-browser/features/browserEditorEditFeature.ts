@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize } from '../../../../../nls.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { KeyMod, KeyCode } from '../../../../../base/common/keyCodes.js';
@@ -23,16 +22,16 @@ import {
 	CONTEXT_BROWSER_HAS_URL,
 	BrowserActionGroup,
 } from '../browserEditor.js';
-import { browserViewActionTitle } from '../../common/browserViewI18n.js';
+import { browserViewActionTitle, browserViewLabel } from '../../common/browserViewI18n.js';
 
-export const CONTEXT_BROWSER_EDIT_MODE_ACTIVE = new RawContextKey<boolean>('browserEditModeActive', false, localize('browser.editModeActive', "Whether in-page edit mode is active"));
+export const CONTEXT_BROWSER_EDIT_MODE_ACTIVE = new RawContextKey<boolean>('browserEditModeActive', false, browserViewLabel('editModeActive', 'Whether in-page edit mode is active'));
 
 export { isAssociatedHtmlResource };
 
 export const CONTEXT_BROWSER_HTML_EDIT_AVAILABLE = new RawContextKey<boolean>(
 	'browserHtmlEditAvailable',
 	false,
-	localize('browser.htmlEditAvailable', "Whether HTML visual edit mode is available for the current browser tab"),
+	browserViewLabel('htmlEditAvailable', 'Whether HTML visual edit mode is available for the current browser tab'),
 );
 
 class BrowserEditorEditModeContribution extends BrowserEditorContribution {

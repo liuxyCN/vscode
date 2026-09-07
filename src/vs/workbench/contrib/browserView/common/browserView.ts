@@ -445,6 +445,9 @@ export interface IBrowserViewModel extends IDisposable {
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
 	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void>;
+	getDcAnnotatedTemplate(componentName: string): Promise<string | null>;
+	getDcRootName(): Promise<string | null>;
+	updateDcTemplate(componentName: string, templateHtml: string): Promise<void>;
 	toggleContentFullscreen(enabled?: boolean): Promise<void>;
 	setDevice(device: IBrowserDeviceProfile | undefined): Promise<void>;
 }
@@ -904,6 +907,18 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	async applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void> {
 		return this.browserViewService.applyHtmlEditPreview(this.id, preview);
+	}
+
+	async getDcAnnotatedTemplate(componentName: string): Promise<string | null> {
+		return this.browserViewService.getDcAnnotatedTemplate(this.id, componentName);
+	}
+
+	async getDcRootName(): Promise<string | null> {
+		return this.browserViewService.getDcRootName(this.id);
+	}
+
+	async updateDcTemplate(componentName: string, templateHtml: string): Promise<void> {
+		return this.browserViewService.updateDcTemplate(this.id, componentName, templateHtml);
 	}
 
 	async toggleContentFullscreen(enabled?: boolean): Promise<void> {

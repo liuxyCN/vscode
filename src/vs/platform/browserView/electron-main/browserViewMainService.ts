@@ -377,6 +377,18 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.applyHtmlEditPreview(preview);
 	}
 
+	async getDcAnnotatedTemplate(id: string, componentName: string): Promise<string | null> {
+		return this._getBrowserView(id).getDcAnnotatedTemplate(componentName);
+	}
+
+	async getDcRootName(id: string): Promise<string | null> {
+		return this._getBrowserView(id).getDcRootName();
+	}
+
+	async updateDcTemplate(id: string, componentName: string, templateHtml: string): Promise<void> {
+		return this._getBrowserView(id).updateDcTemplate(componentName, templateHtml);
+	}
+
 	onDynamicDidCommitHtmlEditText(id: string) {
 		return this._getBrowserView(id).inspector.onDidCommitHtmlEditText;
 	}

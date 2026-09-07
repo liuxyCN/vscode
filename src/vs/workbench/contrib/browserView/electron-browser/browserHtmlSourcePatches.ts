@@ -6,27 +6,147 @@
 import { createTrustedTypesPolicy } from '../../../../base/browser/trustedTypes.js';
 import { browserViewLabel } from '../common/browserViewI18n.js';
 import {
-	BODY_DOM_PATH,
+	applyEditableElementText,
 	BrowserHtmlEditKind,
 	BrowserHtmlEditStyleKey,
 	BROWSER_HTML_EDIT_STYLE_PROPS,
 	cssNameForStyleKey,
+	elementHasEditableTextMarkup,
 	formatBorderShorthand,
 	formatBoxShorthand,
 	IBrowserHtmlPatch,
 	IBoxShorthandSides,
+	IHtmlEditDomPath,
 	isSimpleBackgroundColorValue,
 	parseBorderShorthand,
 	parseBoxShorthand,
+	parseHtmlEditDomPath,
 	parseInlineStyleAttribute,
+	readEditableElementText,
+	sanitizeInlineStyleValue,
 } from './browserHtmlEditTypes.js';
 
 export type { IBrowserHtmlPatch } from './browserHtmlEditTypes.js';
+
+export interface IBrowserHtmlPatchOptions {
+	readonly dcAnnotatedTemplate?: string;
+	readonly dcComponentName?: string;
+}
+
+const RAW_UNWRAP: Record<string, string> = {
+	'sc-raw-select': 'select',
+	'sc-raw-table': 'table',
+	'sc-raw-tbody': 'tbody',
+	'sc-raw-thead': 'thead',
+	'sc-raw-tfoot': 'tfoot',
+	'sc-raw-tr': 'tr',
+	'sc-raw-td': 'td',
+	'sc-raw-th': 'th',
+	'sc-raw-caption': 'caption',
+};
+
+const SC_CAMEL_ATTR_RE = /(\s)sc-camel-([a-z0-9-]+)(\s*=)/g;
+
+function decodeCase(html: string): string {
+	let out = html;
+	for (const [alias, real] of Object.entries(RAW_UNWRAP)) {
+		out = out.replace(new RegExp(`(</?)${alias}(?=[\\s>])`, 'gi'), `$1${real}`);
+	}
+	out = out.replace(/<sc-helmet(\s|>)/gi, '<helmet$1');
+	out = out.replace(/<\/sc-helmet\s*>/gi, '</helmet>');
+	out = out.replace(
+		SC_CAMEL_ATTR_RE,
+		(_, sp: string, name: string, eq: string) => sp + name.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase()) + eq,
+	);
+	return out;
+}
+
+function stripDataDcTplAttributes(root: ParentNode): void {
+	// eslint-disable-next-line no-restricted-syntax -- strip runtime tpl ids from parsed HTML fragments
+	for (const el of root.querySelectorAll('[data-dc-tpl]')) {
+		el.removeAttribute('data-dc-tpl');
+	}
+}
+
+function parseTemplateFragment(source: string, rootDocument: Document): Document | undefined {
+	const trustedSource = toTrustedHtml(source) as string;
+	try {
+		const doc = rootDocument.implementation.createHTMLDocument('');
+		doc.body.innerHTML = trustedSource;
+		return doc;
+	} catch {
+		return undefined;
+	}
+}
+
+function serializeTemplateFragment(doc: Document): string {
+	return decodeCase(doc.body.innerHTML);
+}
+
+interface IFindElementByTplIdResult {
+	readonly element: Element | null;
+	readonly duplicate?: boolean;
+}
+
+function findElementByTplId(doc: ParentNode, tplId: number): IFindElementByTplIdResult {
+	// eslint-disable-next-line no-restricted-syntax -- locate annotated template nodes by stable tpl id
+	const matches = doc.querySelectorAll(`[data-dc-tpl="${tplId}"]`);
+	if (matches.length === 0) {
+		return { element: null };
+	}
+	if (matches.length > 1) {
+		return { element: null, duplicate: true };
+	}
+	return { element: matches[0]! };
+}
+
+export interface IAnnotatedTemplateElementResult {
+	readonly element: Element | null;
+	readonly duplicate?: boolean;
+}
+
+export function findAnnotatedTemplateElement(annotatedHtml: string, tplId: number, rootDocument: Document): IAnnotatedTemplateElementResult {
+	const doc = parseTemplateFragment(annotatedHtml, rootDocument);
+	if (!doc) {
+		return { element: null };
+	}
+	return findElementByTplId(doc, tplId);
+}
+
+export function serializeDcSourceElement(element: Element): string {
+	const clone = element.cloneNode(true) as Element;
+	stripDataDcTplAttributes(clone);
+	return decodeCase(clone.outerHTML);
+}
+
+export function readDcSourceElementAttributes(element: Element): Record<string, string> {
+	const attributes: Record<string, string> = {};
+	for (const { name, value } of [...element.attributes]) {
+		if (name === 'data-dc-tpl') {
+			continue;
+		}
+		attributes[name] = value;
+	}
+	return attributes;
+}
+
+function updateXDcTemplate(source: string, templateHtml: string, rootDocument: Document): string | undefined {
+	const doc = parseSource(source, rootDocument);
+	// eslint-disable-next-line no-restricted-syntax -- read decoded DC template container from parsed source
+	const xdc = doc?.querySelector('x-dc');
+	if (!doc || !xdc) {
+		return undefined;
+	}
+	xdc.innerHTML = toTrustedHtml(templateHtml) as string;
+	return serializeSource(doc, source);
+}
 
 export interface IBrowserHtmlPatchResult {
 	readonly ok: boolean;
 	readonly source: string;
 	readonly error?: string;
+	readonly dcTemplateHtml?: string;
+	readonly dcComponentName?: string;
 }
 
 const ttPolicy = createTrustedTypesPolicy('browserHtmlSourcePatches', { createHTML: value => value });
@@ -48,7 +168,7 @@ function firstSourceToken(source: string): string {
 	return rest;
 }
 
-export function isFullHtmlDocument(source: string): boolean {
+function isFullHtmlDocument(source: string): boolean {
 	const normalized = firstSourceToken(source).slice(0, 32).toLowerCase();
 	return normalized.startsWith('<!doctype') || normalized.startsWith('<html');
 }
@@ -98,26 +218,89 @@ function serializeSource(doc: Document, originalSource: string): string {
 	return `${doctype}${doc.documentElement.outerHTML}`;
 }
 
-export function findElementByDomPath(doc: Document, domPath: string): Element | null {
-	if (domPath === BODY_DOM_PATH) {
-		return doc.body;
+function resolveElementByDomPath(doc: Document, domPath: string): IFindElementByTplIdResult {
+	const parsed = parseHtmlEditDomPath(domPath);
+	if (parsed.kind === 'body') {
+		return { element: doc.body };
 	}
-	if (!domPath.startsWith('path-')) {
-		return null;
+	if (parsed.kind === 'tpl' && parsed.tplId !== undefined) {
+		return findElementByTplId(doc, parsed.tplId);
 	}
-	const indices = domPath.slice('path-'.length).split('-').map(part => Number(part));
-	if (indices.some(index => !Number.isInteger(index) || index < 0)) {
-		return null;
+	if (parsed.kind !== 'path' || !parsed.pathIndices?.length) {
+		return { element: null };
 	}
 	let node: Element = doc.body;
-	for (const index of indices) {
+	for (const index of parsed.pathIndices) {
 		const child = node.children.item(index);
 		if (!child) {
-			return null;
+			return { element: null };
 		}
 		node = child;
 	}
-	return node;
+	return { element: node };
+}
+
+function resolveDcComponentName(parsed: IHtmlEditDomPath, options?: IBrowserHtmlPatchOptions): string | undefined {
+	return parsed.componentName ?? options?.dcComponentName;
+}
+
+function applyDcTplPatch(
+	source: string,
+	patch: IBrowserHtmlPatch,
+	parsed: IHtmlEditDomPath,
+	rootDocument: Document,
+	options?: IBrowserHtmlPatchOptions,
+): IBrowserHtmlPatchResult {
+	const annotated = options?.dcAnnotatedTemplate;
+	const tplId = parsed.tplId;
+	const componentName = resolveDcComponentName(parsed, options);
+	if (!annotated || tplId === undefined) {
+		return { ok: false, source, error: browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.') };
+	}
+	if (componentName && options?.dcComponentName && componentName !== options.dcComponentName) {
+		return {
+			ok: false,
+			source,
+			error: browserViewLabel('htmlEditDcNestedComponent', 'Edit nested components from their own .dc.html file.'),
+		};
+	}
+
+	const annDoc = parseTemplateFragment(annotated, rootDocument);
+	if (!annDoc?.body) {
+		return { ok: false, source, error: browserViewLabel('htmlEditParseFailed', 'Could not parse HTML source.') };
+	}
+
+	const tplResult = findElementByTplId(annDoc, tplId);
+	if (tplResult.duplicate) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDuplicateTplId', 'Multiple elements share the same template id in the HTML source.') };
+	}
+	const el = tplResult.element;
+	if (!el) {
+		return { ok: false, source, error: browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.') };
+	}
+
+	if (patch.removeElement) {
+		if (!el.parentElement || el.parentElement === annDoc.body && annDoc.body.children.length <= 1) {
+			return { ok: false, source, error: browserViewLabel('htmlEditRemoveLast', 'Cannot remove the last rendered element in the document.') };
+		}
+		el.remove();
+	} else {
+		const contentError = applyContentPatch(el, patch.kind, patch);
+		if (contentError) {
+			return { ...contentError, source };
+		}
+		if (patch.styles) {
+			setInlineStyles(el as HTMLElement, patch.styles);
+		}
+	}
+
+	stripDataDcTplAttributes(annDoc);
+	const decodedTemplate = serializeTemplateFragment(annDoc);
+	const updated = updateXDcTemplate(source, decodedTemplate, rootDocument);
+	if (!updated) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcTemplateMissing', 'Could not find <x-dc> template in the source file.') };
+	}
+	return { ok: true, source: updated, dcTemplateHtml: decodedTemplate, dcComponentName: componentName ?? options?.dcComponentName };
 }
 
 function hasElementChildren(el: Element): boolean {
@@ -156,6 +339,13 @@ function findSoleMeaningfulTextNode(el: Element): Text | null {
 }
 
 function setTextContent(el: Element, value: string): IBrowserHtmlPatchResult | undefined {
+	if (elementHasEditableTextMarkup(el)) {
+		if (value === readEditableElementText(el)) {
+			return undefined;
+		}
+		applyEditableElementText(el, value);
+		return undefined;
+	}
 	if (!hasElementChildren(el)) {
 		el.textContent = value;
 		return undefined;
@@ -237,7 +427,8 @@ function isPaddingRelatedStyleKey(key: BrowserHtmlEditStyleKey): boolean {
 
 function serializeInlineStyleMap(styles: Record<string, string>): string {
 	return Object.entries(styles)
-		.filter(([, value]) => value.trim() !== '')
+		.map(([name, value]) => [name, sanitizeInlineStyleValue(value)] as const)
+		.filter(([, value]) => value !== '')
 		.map(([name, value]) => `${name}: ${value}`)
 		.join('; ');
 }
@@ -604,11 +795,11 @@ function setInlineStyles(el: HTMLElement, styles: Partial<Record<BrowserHtmlEdit
 			continue;
 		}
 		const cssName = cssNameForStyleKey(key);
-		const value = styles[key];
-		if (!value?.trim()) {
+		const value = sanitizeInlineStyleValue(styles[key] ?? '');
+		if (!value) {
 			delete current[cssName];
 		} else {
-			current[cssName] = value.trim();
+			current[cssName] = value;
 		}
 	}
 
@@ -681,13 +872,27 @@ function applyContentPatch(el: Element, kind: BrowserHtmlEditKind | undefined, p
 	return undefined;
 }
 
-export function applyBrowserHtmlPatch(source: string, patch: IBrowserHtmlPatch, rootDocument: Document): IBrowserHtmlPatchResult {
+export function applyBrowserHtmlPatch(
+	source: string,
+	patch: IBrowserHtmlPatch,
+	rootDocument: Document,
+	options?: IBrowserHtmlPatchOptions,
+): IBrowserHtmlPatchResult {
+	const parsed = parseHtmlEditDomPath(patch.domPath);
+	if (parsed.kind === 'tpl') {
+		return applyDcTplPatch(source, patch, parsed, rootDocument, options);
+	}
+
 	const doc = parseSource(source, rootDocument);
 	if (!doc?.body) {
 		return { ok: false, source, error: browserViewLabel('htmlEditParseFailed', 'Could not parse HTML source.') };
 	}
 
-	const el = findElementByDomPath(doc, patch.domPath);
+	const resolved = resolveElementByDomPath(doc, patch.domPath);
+	if (resolved.duplicate) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDuplicateTplId', 'Multiple elements share the same template id in the HTML source.') };
+	}
+	const el = resolved.element;
 	if (!el) {
 		return { ok: false, source, error: browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.') };
 	}

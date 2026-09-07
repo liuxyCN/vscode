@@ -136,9 +136,15 @@ function init() {
 		});
 	});
 
-	const htmlEditBridge = new HtmlEditBridge(payload => {
-		ipcRenderer.send('vscode:browserView:htmlEditTextCommit', payload);
-	});
+	const elementPickerRef: { current?: ElementPicker } = {};
+	const htmlEditBridge = new HtmlEditBridge(
+		payload => {
+			ipcRenderer.send('vscode:browserView:htmlEditTextCommit', payload);
+		},
+		({ active, element }) => {
+			elementPickerRef.current?.setElementHighlight(active ? undefined : element);
+		},
+	);
 	ipcRenderer.on('vscode:browserView:editPreview', (_event: unknown, preview: IBrowserHtmlEditPreview) => {
 		htmlEditBridge.applyPreview(preview);
 	});
@@ -149,13 +155,21 @@ function init() {
 	const elementPicker = new ElementPicker(
 		(el, comment) => {
 			const elementId = track(el);
-			ipcRenderer.send('vscode:browserView:elementPicked', { elementId, comment, domPath: domPathForElement(el) });
+			const dcStamp = dcStampAttributesForElement(el);
+			ipcRenderer.send('vscode:browserView:elementPicked', {
+				elementId,
+				comment,
+				domPath: domPathForElement(el),
+				dcTplId: dcStamp.dcTplId,
+				dcComponentName: dcStamp.dcComponentName,
+			});
 			return elementId;
 		},
 		elementId => ipcRenderer.send('vscode:browserView:elementCommentRemoved', elementId),
 		() => ipcRenderer.send('vscode:browserView:elementPickStopped'),
 		htmlEditBridge,
 	);
+	elementPickerRef.current = elementPicker;
 
 	const areaPicker = new AreaPicker(
 		rect => ipcRenderer.send('vscode:browserView:areaPicked', rect),
@@ -373,6 +387,32 @@ type CommentAnimation = {
 
 const BODY_DOM_PATH = '__body__';
 
+function dcRootNameFromWindow(): string | undefined {
+	try {
+		const name = (window as Window & { __dcRootName?: () => string }).__dcRootName?.();
+		return typeof name === 'string' && name ? name : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function domPathStampTarget(el: Element): Element | null {
+	let fallback: Element | null = null;
+	for (let node: Element | null = el; node; node = node.parentElement) {
+		const tpl = node.getAttribute('data-dc-tpl');
+		if (tpl === null || tpl === '') {
+			continue;
+		}
+		if (!node.classList.contains('sc-host-x')) {
+			return node;
+		}
+		if (!fallback) {
+			fallback = node;
+		}
+	}
+	return fallback;
+}
+
 function domPathForElement(el: Element): string {
 	const parts: number[] = [];
 	let node: Element | null = el;
@@ -387,10 +427,66 @@ function domPathForElement(el: Element): string {
 	return parts.length ? `path-${parts.join('-')}` : '';
 }
 
+function dcStampAttributesForElement(el: Element): { dcTplId?: string; dcComponentName?: string } {
+	const stamped = domPathStampTarget(el);
+	const tplId = stamped?.getAttribute('data-dc-tpl');
+	if (!tplId) {
+		return {};
+	}
+	const host = el.closest('[data-sc-name]');
+	const dcName = host?.getAttribute('data-sc-name') ?? dcRootNameFromWindow() ?? undefined;
+	return { dcTplId: tplId, dcComponentName: dcName };
+}
+
+function cssEscapeSelectorValue(value: string): string {
+	if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+		return CSS.escape(value);
+	}
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function sanitizeInlineStyleValue(value: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return '';
+	}
+	const semicolon = trimmed.indexOf(';');
+	if (semicolon !== -1) {
+		return trimmed.slice(0, semicolon).trim();
+	}
+	if (/[{}]/.test(trimmed)) {
+		return trimmed.replace(/[{}]/g, '').trim();
+	}
+	return trimmed;
+}
+
 function findElementByDomPath(domPath: string): Element | null {
 	if (domPath === BODY_DOM_PATH) {
 		return document.body;
 	}
+
+	const dcMatch = domPath.match(/^dc:([^:]+):tpl-(\d+)$/);
+	if (dcMatch) {
+		const host = document.querySelector(`[data-sc-name="${cssEscapeSelectorValue(dcMatch[1]!)}"]`);
+		const scope: ParentNode = host ?? document.getElementById('dc-root') ?? document;
+		return findElementByTplId(scope, dcMatch[2]!);
+	}
+
+	const tplMatch = domPath.match(/^tpl-(\d+)$/);
+	if (tplMatch) {
+		const rootName = dcRootNameFromWindow();
+		if (rootName) {
+			const host = document.querySelector(`[data-sc-name="${cssEscapeSelectorValue(rootName)}"]`) ?? document.getElementById('dc-root');
+			if (host) {
+				const scoped = findElementByTplId(host, tplMatch[1]!);
+				if (scoped) {
+					return scoped;
+				}
+			}
+		}
+		return findElementByTplId(document, tplMatch[1]!);
+	}
+
 	if (!domPath.startsWith('path-')) {
 		return null;
 	}
@@ -403,6 +499,178 @@ function findElementByDomPath(domPath: string): Element | null {
 		node = node.children[idx] ?? null;
 	}
 	return node;
+}
+
+function findUniqueElementByTplId(scope: ParentNode, tplId: string): Element | null {
+	const matches = scope.querySelectorAll(`[data-dc-tpl="${cssEscapeSelectorValue(tplId)}"]`);
+	if (matches.length !== 1) {
+		return null;
+	}
+	return matches[0]!;
+}
+
+function findElementByTplId(scope: ParentNode, tplId: string): Element | null {
+	const scoped = findUniqueElementByTplId(scope, tplId);
+	if (scoped) {
+		return scoped;
+	}
+	if (scope !== document) {
+		return findUniqueElementByTplId(document, tplId);
+	}
+	return null;
+}
+
+const HTML_EDIT_DC_CONTAINER_TAGS = new Set(['x-import', 'dc-import', 'deck-stage', 'x-dc', 'sc-if', 'sc-for', 'sc-else']);
+const HTML_EDIT_LAYOUT_CONTAINER_TAGS = new Set(['section', 'main', 'nav', 'div', 'article', 'header', 'footer']);
+const HTML_EDIT_IGNORABLE_INLINE_CHILD_TAGS = new Set(['br', 'wbr']);
+
+function isStructuralChildTag(tag: string): boolean {
+	if (HTML_EDIT_DC_CONTAINER_TAGS.has(tag) || HTML_EDIT_LAYOUT_CONTAINER_TAGS.has(tag)) {
+		return true;
+	}
+	if (/^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li') {
+		return true;
+	}
+	if (['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'form', 'fieldset'].includes(tag)) {
+		return true;
+	}
+	if (/^sc-raw-(table|tbody|thead|tfoot|tr|td|th|select|caption)$/i.test(tag)) {
+		return true;
+	}
+	return false;
+}
+
+function hasEditableTextStructure(element: Element): boolean {
+	if (element.childElementCount === 0) {
+		return true;
+	}
+	for (const child of element.children) {
+		const tag = child.tagName.toLowerCase();
+		if (HTML_EDIT_IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+			continue;
+		}
+		if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+			if (child.children.length > 0) {
+				return false;
+			}
+			continue;
+		}
+		if (isStructuralChildTag(tag)) {
+			return false;
+		}
+		if (!hasEditableTextStructure(child)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function hasOnlyEditableTextChildren(element: Element): boolean {
+	if (element.childElementCount === 0) {
+		return !!(element.textContent ?? '').trim();
+	}
+	return hasEditableTextStructure(element);
+}
+
+function isDcInlineTextContainer(el: Element): boolean {
+	if (el.children.length === 0) {
+		return false;
+	}
+	for (const child of el.children) {
+		const tag = child.tagName.toLowerCase();
+		if (tag === 'br' || tag === 'wbr') {
+			continue;
+		}
+		if (!child.classList.contains('sc-interp')) {
+			return false;
+		}
+		if (child.children.length > 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function elementHasEditableTextMarkup(el: Element): boolean {
+	for (const child of el.children) {
+		const tag = child.tagName.toLowerCase();
+		if (HTML_EDIT_IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+			return true;
+		}
+		if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+			return true;
+		}
+		if (elementHasEditableTextMarkup(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function readEditableElementText(el: Element): string {
+	const parts: string[] = [];
+	for (const node of el.childNodes) {
+		if (node.nodeType === Node.TEXT_NODE) {
+			parts.push(node.textContent ?? '');
+		} else if (node.nodeType === Node.ELEMENT_NODE) {
+			const child = node as Element;
+			const tag = child.tagName.toLowerCase();
+			if (HTML_EDIT_IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+				parts.push('\n');
+			} else if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+				parts.push(child.textContent ?? '');
+			} else if (!isStructuralChildTag(tag)) {
+				parts.push(readEditableElementText(child));
+			}
+		}
+	}
+	return parts.join('');
+}
+
+function isLayoutTextEditable(el: Element): boolean {
+	const tag = el.tagName.toLowerCase();
+	if (!HTML_EDIT_LAYOUT_CONTAINER_TAGS.has(tag)) {
+		return false;
+	}
+	return hasOnlyEditableTextChildren(el);
+}
+
+function applyEditableElementText(el: HTMLElement, text: string): void {
+	if (!elementHasEditableTextMarkup(el)) {
+		el.textContent = text;
+		return;
+	}
+	while (el.firstChild) {
+		el.removeChild(el.firstChild);
+	}
+	const lines = text.split('\n');
+	for (let i = 0; i < lines.length; i++) {
+		if (i > 0) {
+			el.appendChild(document.createElement('br'));
+		}
+		if (lines[i]!.length > 0) {
+			el.appendChild(document.createTextNode(lines[i]!));
+		}
+	}
+}
+
+function canApplyTextPreview(el: HTMLElement): boolean {
+	if (el === document.body) {
+		return false;
+	}
+	return hasEditableTextStructure(el);
+}
+
+function applyTextPreview(el: HTMLElement, text: string): void {
+	if (isDcInlineTextContainer(el)) {
+		const scInterpChildren = [...el.children].filter(child =>
+			child.classList.contains('sc-interp') && child.children.length === 0);
+		if (scInterpChildren.length === 1) {
+			scInterpChildren[0]!.textContent = text;
+			return;
+		}
+	}
+	applyEditableElementText(el, text);
 }
 
 function camelToKebab(name: string): string {
@@ -440,7 +708,7 @@ function applyBorderPreviewBatch(el: HTMLElement, styles: Record<string, string>
 
 	const widthValues = HTML_EDIT_BORDER_WIDTH_KEYS
 		.filter(key => Object.prototype.hasOwnProperty.call(styles, key))
-		.map(key => styles[key]?.trim() ?? '');
+		.map(key => sanitizeInlineStyleValue(styles[key] ?? ''));
 	if (widthValues.length > 0) {
 		const first = widthValues[0]!;
 		if (widthValues.every(value => value === first)) {
@@ -452,7 +720,7 @@ function applyBorderPreviewBatch(el: HTMLElement, styles: Record<string, string>
 				if (!Object.prototype.hasOwnProperty.call(styles, key)) {
 					continue;
 				}
-				const value = styles[key]?.trim() ?? '';
+				const value = sanitizeInlineStyleValue(styles[key] ?? '');
 				if (value) {
 					el.style.setProperty(camelToKebab(key), value);
 				}
@@ -461,14 +729,14 @@ function applyBorderPreviewBatch(el: HTMLElement, styles: Record<string, string>
 	}
 
 	if (Object.prototype.hasOwnProperty.call(styles, 'borderStyle')) {
-		const value = styles.borderStyle?.trim() ?? '';
+		const value = sanitizeInlineStyleValue(styles.borderStyle ?? '');
 		if (value) {
 			el.style.setProperty('border-style', value);
 		}
 	}
 
 	if (Object.prototype.hasOwnProperty.call(styles, 'borderColor')) {
-		const value = styles.borderColor?.trim() ?? '';
+		const value = sanitizeInlineStyleValue(styles.borderColor ?? '');
 		if (value) {
 			el.style.setProperty('border-color', value);
 		}
@@ -517,10 +785,32 @@ function placeCaretFromClick(clickEvent: MouseEvent | PointerEvent | undefined, 
 
 const HTML_EDIT_INLINE_INPUT_DEBOUNCE_MS = 50;
 
+function ensureHtmlEditPageStyles(): void {
+	if (document.getElementById('vscode-html-edit-styles')) {
+		return;
+	}
+	const style = document.createElement('style');
+	style.id = 'vscode-html-edit-styles';
+	style.textContent = `
+		[data-vscode-editing="true"] {
+			outline: none !important;
+			box-shadow: none !important;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
+interface IHtmlEditEditingState {
+	readonly active: boolean;
+	readonly element?: Element;
+}
+
+type HtmlEditEditingChangeCallback = (state: IHtmlEditEditingState) => void;
+
 interface IActiveTextEdit {
 	readonly el: HTMLElement;
 	readonly domPath: string;
-	readonly originalText: string;
+	originalText: string;
 	readonly onKey: (ev: Event) => void;
 	readonly onInput: (ev: Event) => void;
 	inputDebounceHandle: ReturnType<typeof setTimeout> | undefined;
@@ -532,6 +822,7 @@ class HtmlEditBridge {
 
 	constructor(
 		private readonly _onTextCommit: (payload: { domPath: string; value: string }) => void,
+		private readonly _onEditingChange: HtmlEditEditingChangeCallback | undefined,
 	) { }
 
 	get activeTextEditElement(): Element | undefined {
@@ -559,13 +850,19 @@ class HtmlEditBridge {
 		if (tag === 'a') {
 			return true;
 		}
-		if (el.children.length > 0) {
+		if (el.children.length > 0 && !hasOnlyEditableTextChildren(el)) {
 			return false;
 		}
 		if (['script', 'style', 'img', 'br', 'hr', 'input', 'textarea', 'select', 'button', 'svg'].includes(tag)) {
 			return false;
 		}
-		return explicit === 'text' || explicit === 'link' || !['section', 'main', 'nav', 'div', 'article', 'header', 'footer'].includes(tag);
+		if (explicit === 'text' || explicit === 'link') {
+			return true;
+		}
+		if (isLayoutTextEditable(el)) {
+			return true;
+		}
+		return !['section', 'main', 'nav', 'div', 'article', 'header', 'footer'].includes(tag);
 	}
 
 	finishActiveTextEdit(commit: boolean): boolean {
@@ -582,13 +879,14 @@ class HtmlEditBridge {
 		el.removeAttribute('data-vscode-editing');
 		el.removeEventListener('keydown', session.onKey);
 		el.removeEventListener('input', session.onInput);
-		const value = (el.textContent ?? '').trim();
-		const changed = value !== session.originalText.trim();
+		const value = readEditableElementText(el);
+		const changed = value !== session.originalText;
 		if (commit && changed) {
 			this._onTextCommit({ domPath: session.domPath, value });
 		} else if (!commit) {
-			el.textContent = session.originalText;
+			applyEditableElementText(el, session.originalText);
 		}
+		this._onEditingChange?.({ active: false, element: el });
 		return true;
 	}
 
@@ -606,9 +904,11 @@ class HtmlEditBridge {
 		if (el.getAttribute('contenteditable') === 'true') {
 			return;
 		}
-		const originalText = el.textContent ?? '';
+		const originalText = readEditableElementText(el);
+		ensureHtmlEditPageStyles();
 		el.setAttribute('contenteditable', 'true');
 		el.setAttribute('data-vscode-editing', 'true');
+		this._onEditingChange?.({ active: true, element: el });
 		try {
 			el.focus();
 		} catch {
@@ -644,7 +944,7 @@ class HtmlEditBridge {
 					return;
 				}
 				active.inputDebounceHandle = undefined;
-				this._onTextCommit({ domPath, value: el.textContent ?? '' });
+				this._onTextCommit({ domPath, value: readEditableElementText(el) });
 			}, HTML_EDIT_INLINE_INPUT_DEBOUNCE_MS);
 		};
 		this._activeTextEdit = { el, domPath, originalText, onKey, onInput, inputDebounceHandle: undefined };
@@ -670,12 +970,19 @@ class HtmlEditBridge {
 				if (typeof value !== 'string' || value.trim() === '') {
 					el.style.removeProperty(cssName);
 				} else {
-					el.style.setProperty(cssName, value.trim());
+					el.style.setProperty(cssName, sanitizeInlineStyleValue(value));
 				}
 			}
 		}
-		if (typeof preview.text === 'string' && el !== document.body && el.children.length === 0 && !this.isEditingElement(el)) {
-			el.textContent = preview.text;
+		if (typeof preview.text === 'string' && el !== document.body) {
+			if (canApplyTextPreview(el)) {
+				applyTextPreview(el, preview.text);
+			} else if (el.childElementCount === 0) {
+				el.textContent = preview.text;
+			}
+			if (this._activeTextEdit?.el === el) {
+				this._activeTextEdit.originalText = preview.text;
+			}
 		}
 		if (typeof preview.href === 'string' && el instanceof HTMLAnchorElement) {
 			el.href = preview.href;
@@ -1086,6 +1393,10 @@ class ElementPicker {
 		this._externalHighlightTarget = element;
 		this._hideActiveCommentPreview();
 		this._updateHighlight(element);
+	}
+
+	setElementHighlight(target: Element | undefined): void {
+		this._updateHighlight(target);
 	}
 
 	/**
@@ -1644,10 +1955,11 @@ class ElementPicker {
 			this._htmlEdit?.finishActiveTextEdit(true);
 			const pointerEvent = this._lastCommitPointerEvent;
 			requestAnimationFrame(() => {
-				this._updateHighlight(target);
 				this._onPicked(target);
 				if (this._htmlEdit?.shouldStartInlineEdit(target)) {
 					this._htmlEdit.makeEditable(target, pointerEvent);
+				} else {
+					this._updateHighlight(target);
 				}
 			});
 			return;

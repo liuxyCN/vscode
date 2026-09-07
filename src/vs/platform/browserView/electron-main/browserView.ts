@@ -1083,6 +1083,50 @@ export class BrowserView extends Disposable {
 		}
 	}
 
+	async getDcAnnotatedTemplate(componentName: string): Promise<string | null> {
+		if (this._view.webContents.isLoading()) {
+			return null;
+		}
+		try {
+			const result = await this._view.webContents.executeJavaScript(
+				`(function(name){try{return window.__dcAnnotatedTemplate?.(name)??null}catch(e){return null}})(${JSON.stringify(componentName)})`,
+				true,
+			);
+			return typeof result === 'string' ? result : null;
+		} catch {
+			return null;
+		}
+	}
+
+	async getDcRootName(): Promise<string | null> {
+		if (this._view.webContents.isLoading()) {
+			return null;
+		}
+		try {
+			const result = await this._view.webContents.executeJavaScript(
+				`(function(){try{return window.__dcRootName?.()??null}catch(e){return null}})()`,
+				true,
+			);
+			return typeof result === 'string' ? result : null;
+		} catch {
+			return null;
+		}
+	}
+
+	async updateDcTemplate(componentName: string, templateHtml: string): Promise<void> {
+		if (this._view.webContents.isLoading()) {
+			return;
+		}
+		try {
+			await this._view.webContents.executeJavaScript(
+				`(function(name,html){try{window.__dcUpdate?.(name,'html',html,false)}catch(e){}})(${JSON.stringify(componentName)},${JSON.stringify(templateHtml)})`,
+				true,
+			);
+		} catch {
+			// ignore
+		}
+	}
+
 	/**
 	 * Clear all storage data for this browser view's session
 	 */

@@ -12,7 +12,6 @@ import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { localize } from '../../../../../nls.js';
 import { EditOperation } from '../../../../../editor/common/core/editOperation.js';
 import { IElementData } from '../../../../../platform/browserView/common/browserView.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -23,7 +22,7 @@ import { IContextKey, IContextKeyService } from '../../../../../platform/context
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IBrowserViewModel } from '../../common/browserView.js';
 import { BrowserEditorInput } from '../../common/browserEditorInput.js';
-import { applyBrowserHtmlPatch, IBrowserHtmlPatch } from '../browserHtmlSourcePatches.js';
+import { applyBrowserHtmlPatch, findAnnotatedTemplateElement, IBrowserHtmlPatch, readDcSourceElementAttributes, serializeDcSourceElement } from '../browserHtmlSourcePatches.js';
 import { BrowserHtmlEditColorPickerController } from '../browserHtmlEditColorPicker.js';
 import {
 	BODY_DOM_PATH,
@@ -32,12 +31,17 @@ import {
 	buildBrowserHtmlEditSavePatch,
 	cloneBrowserHtmlEditDraft,
 	composeTextDecorationFlags,
+	buildDcTplDomPath,
+	dcComponentNameFromResource,
 	diffBrowserHtmlEditStyles,
 	emptyBrowserHtmlEditDraft,
 	IBrowserHtmlEditDraft,
 	inferBrowserHtmlEditKind,
+	inferBrowserHtmlEditKindFromSourceElement,
 	parseTextDecorationFlags,
 	readBrowserHtmlEditStyles,
+	readEditableElementText,
+	resolveDcTplLocator,
 } from '../browserHtmlEditTypes.js';
 import { browserViewLabel } from '../../common/browserViewI18n.js';
 import {
@@ -103,7 +107,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 
 	private static readonly SAVE_SOURCE = SaveSourceRegistry.registerSource(
 		'browserHtmlEdit.source',
-		localize('browserHtmlEdit.saveSource', "Browser HTML Edit"),
+		browserViewLabel('htmlEditSaveSource', 'Browser HTML Edit'),
 	);
 	private readonly _panel: HTMLElement;
 	private readonly _scroll: HTMLElement;
@@ -152,6 +156,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	private _history: string[] = [];
 	private _historyIndex = -1;
 	private _suppressPreview = false;
+	private _populateDraftGeneration = 0;
 	private readonly _previewScheduler: RunOnceScheduler;
 
 	constructor(
@@ -869,7 +874,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		if (!model?.isEditModeActive) {
 			return;
 		}
-		const domPath = this._selected?.domPath ?? BODY_DOM_PATH;
+		const domPath = this._selected?.domPath || BODY_DOM_PATH;
 		const draft = this._readDraftFromInputs();
 		const styles: Record<string, string> = {};
 		const styleDiff = diffBrowserHtmlEditStyles(this._baselineDraft.styles, draft.styles);
@@ -1041,7 +1046,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 				return;
 			}
 			this._selected = data;
-			this._populateDraft(data);
+			void this._populateDraftFromSelection(data);
 		}));
 
 		store.add(model.onDidCommitHtmlEditText(({ domPath, value }) => {
@@ -1103,11 +1108,71 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		this._redoButton.enabled = this._historyIndex >= 0 && this._historyIndex < this._history.length - 1;
 	}
 
+	private async _populateDraftFromSelection(data: IElementData): Promise<void> {
+		const generation = ++this._populateDraftGeneration;
+		const draftData = await this._resolveDraftElementData(data);
+		if (generation !== this._populateDraftGeneration || this._selected !== data) {
+			return;
+		}
+		this._populateDraft(draftData);
+	}
+
+	private async _resolveDraftElementData(data: IElementData): Promise<IElementData> {
+		const locator = resolveDcTplLocator(data, this._associatedResource);
+		if (!locator) {
+			return data;
+		}
+
+		const model = this.editor.model;
+		if (!model) {
+			return data;
+		}
+
+		let componentName = locator.componentName
+			?? (this._associatedResource ? dcComponentNameFromResource(this._associatedResource) : undefined)
+			?? await model.getDcRootName()
+			?? undefined;
+
+		let annotated = componentName ? await model.getDcAnnotatedTemplate(componentName) : null;
+		if (!annotated) {
+			const rootName = await model.getDcRootName();
+			if (rootName && rootName !== componentName) {
+				componentName = rootName;
+				annotated = await model.getDcAnnotatedTemplate(rootName);
+			}
+		}
+
+		if (!annotated) {
+			return data;
+		}
+
+		const tplResult = findAnnotatedTemplateElement(annotated, locator.tplId, document);
+		if (tplResult.duplicate) {
+			this.notificationService.warn(browserViewLabel('htmlEditDuplicateTplId', 'Multiple elements share the same template id in the HTML source.'));
+			return data;
+		}
+		const sourceEl = tplResult.element;
+		if (!sourceEl) {
+			return data;
+		}
+
+		const sourceAttributes = readDcSourceElementAttributes(sourceEl);
+		const outerHTML = serializeDcSourceElement(sourceEl);
+		const sourceKind = inferBrowserHtmlEditKindFromSourceElement(sourceEl);
+
+		return {
+			...data,
+			outerHTML,
+			attributes: { ...data.attributes, ...sourceAttributes, 'data-od-edit': sourceKind },
+			innerText: readEditableElementText(sourceEl),
+		};
+	}
+
 	private _populateDraft(data: IElementData): void {
 		this._colorPicker.hide();
 		const kind = inferBrowserHtmlEditKind(data);
 		const tagMatch = data.outerHTML.match(/^<([a-z0-9-]+)/i);
-		const tag = tagMatch?.[1] ?? 'element';
+		const tag = tagMatch?.[1]?.toLowerCase() ?? 'element';
 		const id = data.attributes?.id ? `#${data.attributes.id}` : '';
 		this._selector.textContent = `${tag}${id}`;
 
@@ -1193,12 +1258,16 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	}
 
 	private _readElementText(data: IElementData): string {
-		if (data.innerText?.trim()) {
-			return data.innerText.trim();
+		const tagMatch = data.outerHTML.match(/^<([a-z0-9-]+)/i);
+		if (tagMatch) {
+			const container = document.createElement('div');
+			safeSetInnerHtml(container, data.outerHTML);
+			const root = container.firstElementChild;
+			if (root) {
+				return readEditableElementText(root);
+			}
 		}
-		const container = document.createElement('div');
-		safeSetInnerHtml(container, data.outerHTML);
-		return (container.textContent ?? '').trim();
+		return data.innerText ?? '';
 	}
 
 	private _resetDraft(): void {
@@ -1344,19 +1413,45 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 
 	private async _savePatch(patch: IBrowserHtmlPatch): Promise<void> {
 		const resource = this._associatedResource;
-		if (!resource) {
+		const model = this.editor.model;
+		if (!resource || !model) {
 			return;
 		}
 		try {
 			this._clearSaveStatus();
 			const file = await this.fileService.readFile(resource);
 			const source = file.value.toString();
-			const result = applyBrowserHtmlPatch(source, patch, document);
+
+			const locator = this._selected ? resolveDcTplLocator(this._selected, resource) : undefined;
+			const savePatch: IBrowserHtmlPatch = locator
+				? { ...patch, domPath: buildDcTplDomPath(locator) }
+				: patch;
+
+			let patchOptions: { dcAnnotatedTemplate?: string; dcComponentName?: string } | undefined;
+			if (locator) {
+				const fileComponentName = dcComponentNameFromResource(resource);
+				const resolvedName = locator.componentName ?? fileComponentName;
+				if (!resolvedName) {
+					this.notificationService.error(browserViewLabel('htmlEditDcTemplateMissing', 'Could not find <x-dc> template in the source file.'));
+					return;
+				}
+				const annotated = await model.getDcAnnotatedTemplate(resolvedName);
+				if (!annotated) {
+					this.notificationService.error(browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.'));
+					return;
+				}
+				patchOptions = { dcAnnotatedTemplate: annotated, dcComponentName: fileComponentName ?? resolvedName };
+			}
+
+			const result = applyBrowserHtmlPatch(source, savePatch, document, patchOptions);
 			if (!result.ok) {
 				this.notificationService.error(result.error ?? browserViewLabel('htmlEditSaveFailed', 'Could not apply the edit.'));
 				return;
 			}
 			await this._writeSource(result.source, { reload: false });
+			if (result.dcTemplateHtml && result.dcComponentName) {
+				await model.updateDcTemplate(result.dcComponentName, result.dcTemplateHtml);
+			}
 			this._showSaveStatus(browserViewLabel('htmlEditSaveSuccess', 'Saved successfully'));
 		} catch {
 			this.notificationService.error(browserViewLabel('htmlEditSaveFailed', 'Could not apply the edit.'));

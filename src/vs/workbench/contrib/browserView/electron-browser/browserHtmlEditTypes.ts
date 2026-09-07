@@ -3,9 +3,84 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { URI } from '../../../../base/common/uri.js';
 import { IElementData } from '../../../../platform/browserView/common/browserView.js';
 
 export const BODY_DOM_PATH = '__body__';
+
+export type HtmlEditDomPathKind = 'body' | 'path' | 'tpl';
+
+export interface IHtmlEditDomPath {
+	readonly kind: HtmlEditDomPathKind;
+	readonly componentName?: string;
+	readonly tplId?: number;
+	readonly pathIndices?: number[];
+}
+
+const DC_TPL_DOM_PATH_RE = /^dc:([^:]+):tpl-(\d+)$/;
+const TPL_DOM_PATH_RE = /^tpl-(\d+)$/;
+
+export function parseHtmlEditDomPath(domPath: string): IHtmlEditDomPath {
+	if (domPath === BODY_DOM_PATH) {
+		return { kind: 'body' };
+	}
+	const dcMatch = domPath.match(DC_TPL_DOM_PATH_RE);
+	if (dcMatch) {
+		return { kind: 'tpl', componentName: dcMatch[1], tplId: Number(dcMatch[2]) };
+	}
+	const tplMatch = domPath.match(TPL_DOM_PATH_RE);
+	if (tplMatch) {
+		return { kind: 'tpl', tplId: Number(tplMatch[1]) };
+	}
+	if (domPath.startsWith('path-')) {
+		const indices = domPath.slice('path-'.length).split('-').map(part => Number(part));
+		if (indices.every(index => Number.isInteger(index) && index >= 0)) {
+			return { kind: 'path', pathIndices: indices };
+		}
+	}
+	return { kind: 'path', pathIndices: [] };
+}
+
+export function resolveDcTplLocator(data: IElementData, resource?: URI): IDcTplLocator | undefined {
+	const tplRaw = data.attributes?.['data-dc-tpl'];
+	if (tplRaw !== undefined && tplRaw !== '') {
+		const tplId = Number(tplRaw);
+		if (Number.isInteger(tplId) && tplId >= 0) {
+			return {
+				componentName: data.attributes?.['data-sc-name'] ?? (resource ? dcComponentNameFromResource(resource) : undefined),
+				tplId,
+			};
+		}
+	}
+	return undefined;
+}
+
+export interface IDcTplLocator {
+	readonly componentName?: string;
+	readonly tplId: number;
+}
+
+export function buildDcTplDomPath(locator: IDcTplLocator): string {
+	if (locator.componentName) {
+		return `dc:${locator.componentName}:tpl-${locator.tplId}`;
+	}
+	return `tpl-${locator.tplId}`;
+}
+
+export function dcComponentNameFromResource(resource: URI): string | undefined {
+	const base = resource.path.split('/').pop() ?? '';
+	const match = base.match(/^(.+)\.dc\.html$/i);
+	if (match) {
+		return match[1];
+	}
+	try {
+		const decoded = decodeURIComponent(base);
+		const decodedMatch = decoded.match(/^(.+)\.dc\.html$/i);
+		return decodedMatch?.[1];
+	} catch {
+		return undefined;
+	}
+}
 
 export type BrowserHtmlEditKind = 'text' | 'link' | 'image' | 'container';
 
@@ -205,22 +280,205 @@ export function buildBrowserHtmlEditSavePatch(
 	};
 }
 
-export function inferBrowserHtmlEditKind(data: IElementData): BrowserHtmlEditKind {
-	const explicit = data.attributes?.['data-od-edit'];
-	if (explicit === 'text' || explicit === 'link' || explicit === 'image' || explicit === 'container') {
-		return explicit;
+const DC_CONTAINER_TAGS = new Set(['x-import', 'dc-import', 'deck-stage', 'x-dc', 'sc-if', 'sc-for', 'sc-else']);
+const LAYOUT_CONTAINER_TAGS = new Set(['section', 'main', 'nav', 'div', 'article', 'header', 'footer']);
+const SOURCE_TEXT_TAGS = new Set([
+	'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'label', 'button', 'li', 'td', 'th',
+	'em', 'strong', 'small', 'caption', 'legend', 'option', 'textarea', 'select',
+]);
+
+const IGNORABLE_INLINE_CHILD_TAGS = new Set(['br', 'wbr']);
+
+/** Block-level or DC structural tags — their presence means layout, not a text leaf. */
+function isStructuralChildTag(tag: string): boolean {
+	if (DC_CONTAINER_TAGS.has(tag) || LAYOUT_CONTAINER_TAGS.has(tag)) {
+		return true;
 	}
-	const tag = data.outerHTML.match(/^<([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? '';
+	if (/^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li') {
+		return true;
+	}
+	if (['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'form', 'fieldset'].includes(tag)) {
+		return true;
+	}
+	if (/^sc-raw-(table|tbody|thead|tfoot|tr|td|th|select|caption)$/i.test(tag)) {
+		return true;
+	}
+	return false;
+}
+
+/** True when child markup is compatible with inline/DC text editing (ignores whether copy is present). */
+function hasEditableTextStructure(element: Element): boolean {
+	if (element.childElementCount === 0) {
+		return true;
+	}
+	for (const child of element.children) {
+		const tag = child.tagName.toLowerCase();
+		if (IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+			continue;
+		}
+		if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+			if (child.children.length > 0) {
+				return false;
+			}
+			continue;
+		}
+		if (isStructuralChildTag(tag)) {
+			return false;
+		}
+		if (!hasEditableTextStructure(child)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** True when the element carries editable copy but no structural child tags (DC `sc-interp` / inline spans are ok). */
+function hasOnlyEditableTextChildren(element: Element): boolean {
+	if (element.childElementCount === 0) {
+		return !!(element.textContent ?? '').trim();
+	}
+	return hasEditableTextStructure(element);
+}
+
+/** Read user-facing text, mapping `<br>` / `<wbr>` to `\n`. */
+export function readEditableElementText(element: Element): string {
+	const parts: string[] = [];
+	for (const node of element.childNodes) {
+		if (node.nodeType === Node.TEXT_NODE) {
+			parts.push(node.textContent ?? '');
+		} else if (node.nodeType === Node.ELEMENT_NODE) {
+			const child = node as Element;
+			const tag = child.tagName.toLowerCase();
+			if (IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+				parts.push('\n');
+			} else if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+				parts.push(child.textContent ?? '');
+			} else if (!isStructuralChildTag(tag)) {
+				parts.push(readEditableElementText(child));
+			}
+		}
+	}
+	return parts.join('');
+}
+
+export function elementHasEditableTextMarkup(element: Element): boolean {
+	for (const child of element.children) {
+		const tag = child.tagName.toLowerCase();
+		if (IGNORABLE_INLINE_CHILD_TAGS.has(tag)) {
+			return true;
+		}
+		if (tag === 'span' && /\bsc-interp\b/.test(child.className)) {
+			return true;
+		}
+		if (elementHasEditableTextMarkup(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/** Write user-facing text back, mapping `\n` to `<br>` when the element already uses line breaks. */
+export function applyEditableElementText(element: Element, text: string): void {
+	if (!elementHasEditableTextMarkup(element)) {
+		element.textContent = text;
+		return;
+	}
+	while (element.firstChild) {
+		element.removeChild(element.firstChild);
+	}
+	const lines = text.split('\n');
+	const doc = element.ownerDocument;
+	for (let i = 0; i < lines.length; i++) {
+		if (i > 0) {
+			element.appendChild(doc.createElement('br'));
+		}
+		if (lines[i].length > 0) {
+			element.appendChild(doc.createTextNode(lines[i]));
+		}
+	}
+}
+
+function parseOuterHtmlRootElement(outerHTML: string): Element | undefined {
+	try {
+		const doc = new DOMParser().parseFromString(outerHTML, 'text/html');
+		return doc.body.firstElementChild ?? undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function inferBrowserHtmlEditKindFromSourceElement(element: Element): BrowserHtmlEditKind {
+	const tag = element.tagName.toLowerCase();
 	if (tag === 'a') {
 		return 'link';
 	}
 	if (tag === 'img') {
 		return 'image';
 	}
-	if (['section', 'main', 'nav', 'div', 'article', 'header', 'footer'].includes(tag)) {
+	if (DC_CONTAINER_TAGS.has(tag)) {
 		return 'container';
 	}
-	return 'text';
+	if (SOURCE_TEXT_TAGS.has(tag)) {
+		return 'text';
+	}
+	if (LAYOUT_CONTAINER_TAGS.has(tag)) {
+		return hasOnlyEditableTextChildren(element) ? 'text' : 'container';
+	}
+	if (element.childElementCount === 0) {
+		return (element.textContent ?? '').trim() ? 'text' : 'container';
+	}
+	return hasOnlyEditableTextChildren(element) ? 'text' : 'container';
+}
+
+export function inferBrowserHtmlEditKind(data: IElementData): BrowserHtmlEditKind {
+	const explicit = data.attributes?.['data-od-edit'];
+	if (explicit === 'text' || explicit === 'link' || explicit === 'image' || explicit === 'container') {
+		return explicit;
+	}
+	const tag = data.outerHTML.match(/^<([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? '';
+	const classAttr = data.attributes?.class ?? '';
+	if (/\bsc-interp\b/.test(classAttr)) {
+		return 'text';
+	}
+	if (tag === 'a') {
+		return 'link';
+	}
+	if (tag === 'img') {
+		return 'image';
+	}
+	if (DC_CONTAINER_TAGS.has(tag)) {
+		return 'container';
+	}
+	if (LAYOUT_CONTAINER_TAGS.has(tag)) {
+		const root = parseOuterHtmlRootElement(data.outerHTML);
+		if (root && hasOnlyEditableTextChildren(root)) {
+			return 'text';
+		}
+		return 'container';
+	}
+	const root = parseOuterHtmlRootElement(data.outerHTML);
+	if (root) {
+		return hasOnlyEditableTextChildren(root) ? 'text' : 'container';
+	}
+	return 'container';
+}
+
+/**
+ * Strip characters that could inject additional CSS declarations when written to an inline style attribute.
+ */
+export function sanitizeInlineStyleValue(value: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return '';
+	}
+	const semicolon = trimmed.indexOf(';');
+	if (semicolon !== -1) {
+		return trimmed.slice(0, semicolon).trim();
+	}
+	if (/[{}]/.test(trimmed)) {
+		return trimmed.replace(/[{}]/g, '').trim();
+	}
+	return trimmed;
 }
 
 export function parseInlineStyleAttribute(styleAttr: string | undefined): Record<string, string> {
