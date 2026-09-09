@@ -18,10 +18,12 @@ import {
 	IBoxShorthandSides,
 	IHtmlEditDomPath,
 	isSimpleBackgroundColorValue,
+	isStructuralChildTag,
 	parseBorderShorthand,
 	parseBoxShorthand,
 	parseHtmlEditDomPath,
 	parseInlineStyleAttribute,
+	propNameToHtmlAttribute,
 	readEditableElementText,
 	sanitizeInlineStyleValue,
 } from './browserHtmlEditTypes.js';
@@ -139,6 +141,37 @@ function updateXDcTemplate(source: string, templateHtml: string, rootDocument: D
 	}
 	xdc.innerHTML = toTrustedHtml(templateHtml) as string;
 	return serializeSource(doc, source);
+}
+
+export function readXDcDecodedTemplate(source: string, rootDocument: Document): string | undefined {
+	const doc = parseSource(source, rootDocument);
+	// eslint-disable-next-line no-restricted-syntax -- read decoded DC template container from parsed source
+	const xdc = doc?.querySelector('x-dc');
+	if (!xdc) {
+		return undefined;
+	}
+	return decodeCase(xdc.innerHTML);
+}
+
+export function readDataPropsFromSource(source: string, rootDocument: Document): Record<string, unknown> | undefined {
+	const doc = parseSource(source, rootDocument);
+	if (!doc) {
+		return undefined;
+	}
+	// eslint-disable-next-line no-restricted-syntax -- read component prop defaults from parsed source
+	const scriptEl = doc.querySelector('script[data-dc-script][data-props]') ?? doc.querySelector('script[data-props]');
+	const propsRaw = scriptEl?.getAttribute('data-props');
+	if (!propsRaw) {
+		return undefined;
+	}
+	try {
+		const parsed: unknown = JSON.parse(propsRaw);
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+			? parsed as Record<string, unknown>
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export interface IBrowserHtmlPatchResult {
@@ -307,6 +340,11 @@ function hasElementChildren(el: Element): boolean {
 	return Array.from(el.children).some(child => child.nodeType === Node.ELEMENT_NODE);
 }
 
+/**
+ * Finds the single text node that carries the element's user-facing text, mirroring the traversal
+ * of {@link readEditableElementText}: structural children render their own text and are excluded
+ * from the edit panel's text field, so writing into them would replace copy the user never saw.
+ */
 function findSoleMeaningfulTextNode(el: Element): Text | null {
 	let found: Text | null = null;
 	let ambiguous = false;
@@ -330,6 +368,9 @@ function findSoleMeaningfulTextNode(el: Element): Text | null {
 					found = text;
 				}
 			} else if (child.nodeType === Node.ELEMENT_NODE) {
+				if (isStructuralChildTag((child as Element).tagName.toLowerCase())) {
+					continue;
+				}
 				visit(child);
 			}
 		}
@@ -863,9 +904,9 @@ function applyContentPatch(el: Element, kind: BrowserHtmlEditKind | undefined, p
 		}
 		return undefined;
 	}
-	if (resolvedKind === 'container') {
-		return undefined;
-	}
+	// Containers fall through to the text handling below: the edit panel offers a text field for
+	// any element that renders text, and dropping that edit here would report a successful save
+	// while leaving the source untouched.
 	if (patch.text !== undefined) {
 		return setTextContent(el, patch.text);
 	}
@@ -917,5 +958,138 @@ export function applyBrowserHtmlPatch(
 		setInlineStyles(el as HTMLElement, patch.styles);
 	}
 
+	return { ok: true, source: serializeSource(doc, source) };
+}
+
+const DC_IMPORT_TAGS = new Set(['dc-import', 'x-import']);
+const DC_IMPORT_SELECTOR = 'dc-import, x-import';
+
+function dcImportComponentName(el: Element): string | undefined {
+	return (el.getAttribute('name') ?? el.getAttribute('component'))?.toLowerCase();
+}
+
+function findDcImportInSource(
+	xdc: Element,
+	annotatedTemplate: string,
+	importTplId: number,
+	componentName: string | undefined,
+	rootDocument: Document,
+): Element | null {
+	const annDoc = parseTemplateFragment(annotatedTemplate, rootDocument);
+	if (!annDoc?.body) {
+		return null;
+	}
+	const tplResult = findElementByTplId(annDoc, importTplId);
+	const annImport = tplResult.element;
+	if (!annImport || !DC_IMPORT_TAGS.has(annImport.tagName.toLowerCase())) {
+		return null;
+	}
+
+	// eslint-disable-next-line no-restricted-syntax -- match dc-import by position in annotated vs source
+	const annImports = [...annDoc.querySelectorAll(DC_IMPORT_SELECTOR)];
+	// eslint-disable-next-line no-restricted-syntax -- match dc-import by position in annotated vs source
+	const sourceImports = [...xdc.querySelectorAll(DC_IMPORT_SELECTOR)];
+
+	// Match by position among the imports of the same component, so that a component imported
+	// more than once still resolves to the import the tpl id points at.
+	if (componentName) {
+		const normalized = componentName.toLowerCase();
+		const annNamed = annImports.filter(el => dcImportComponentName(el) === normalized);
+		const sourceNamed = sourceImports.filter(el => dcImportComponentName(el) === normalized);
+		const namedIndex = annNamed.indexOf(annImport);
+		if (namedIndex >= 0 && annNamed.length === sourceNamed.length) {
+			return sourceNamed[namedIndex] ?? null;
+		}
+	}
+
+	const index = annImports.indexOf(annImport);
+	if (index < 0) {
+		return null;
+	}
+	return sourceImports[index] ?? null;
+}
+
+export function applyDcImportPropPatch(
+	source: string,
+	annotatedTemplate: string,
+	importTplId: number,
+	propName: string,
+	value: string,
+	componentName: string | undefined,
+	rootDocument: Document,
+): IBrowserHtmlPatchResult {
+	const annDoc = parseTemplateFragment(annotatedTemplate, rootDocument);
+	if (!annDoc?.body) {
+		return { ok: false, source, error: browserViewLabel('htmlEditParseFailed', 'Could not parse HTML source.') };
+	}
+
+	const tplResult = findElementByTplId(annDoc, importTplId);
+	if (tplResult.duplicate) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDuplicateTplId', 'Multiple elements share the same template id in the HTML source.') };
+	}
+	const annImport = tplResult.element;
+	if (!annImport) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcImportNotFound', 'Could not find <dc-import> for this prop in the source.') };
+	}
+	const tag = annImport.tagName.toLowerCase();
+	if (!DC_IMPORT_TAGS.has(tag)) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcImportNotFound', 'Could not find <dc-import> for this prop in the source.') };
+	}
+
+	const doc = parseSource(source, rootDocument);
+	// eslint-disable-next-line no-restricted-syntax -- read decoded DC template container from parsed source
+	const xdc = doc?.querySelector('x-dc');
+	if (!doc || !xdc) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcTemplateMissing', 'Could not find <x-dc> template in the source file.') };
+	}
+
+	const importEl = findDcImportInSource(xdc, annotatedTemplate, importTplId, componentName, rootDocument);
+	if (!importEl) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcImportNotFound', 'Could not find <dc-import> for this prop in the source.') };
+	}
+
+	importEl.setAttribute(propNameToHtmlAttribute(propName), value);
+	return { ok: true, source: serializeSource(doc, source) };
+}
+
+export function applyDcPropsDefaultPatch(
+	source: string,
+	propName: string,
+	value: string,
+	rootDocument: Document,
+): IBrowserHtmlPatchResult {
+	const doc = parseSource(source, rootDocument);
+	if (!doc?.body) {
+		return { ok: false, source, error: browserViewLabel('htmlEditParseFailed', 'Could not parse HTML source.') };
+	}
+
+	// eslint-disable-next-line no-restricted-syntax -- locate component prop defaults in source
+	const scriptEl = doc.querySelector('script[data-dc-script][data-props]') ?? doc.querySelector('script[data-props]');
+	if (!scriptEl) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcPropsNotFound', 'Could not find data-props for this component.') };
+	}
+
+	const propsRaw = scriptEl.getAttribute('data-props');
+	if (!propsRaw) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcPropsNotFound', 'Could not find data-props for this component.') };
+	}
+
+	let parsed: Record<string, { default?: string }>;
+	try {
+		parsed = JSON.parse(propsRaw);
+	} catch {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcPropsNotFound', 'Could not find data-props for this component.') };
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		return { ok: false, source, error: browserViewLabel('htmlEditDcPropsNotFound', 'Could not find data-props for this component.') };
+	}
+
+	const entry = parsed[propName];
+	if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+		entry.default = value;
+	} else {
+		parsed[propName] = { default: value };
+	}
+	scriptEl.setAttribute('data-props', JSON.stringify(parsed));
 	return { ok: true, source: serializeSource(doc, source) };
 }

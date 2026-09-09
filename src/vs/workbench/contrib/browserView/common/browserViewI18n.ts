@@ -110,8 +110,23 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditRemoveLast'
 	| 'htmlEditDcNestedComponent'
 	| 'htmlEditDcTemplateMissing'
-	| 'captureScreenshotNoPage'
+	| 'htmlEditDcPropImport'
+	| 'htmlEditDcPropDefault'
+	| 'htmlEditDcImportNotFound'
+	| 'htmlEditDcPropsNotFound'
+	| 'browserPageNotFound'
+	| 'browserTabInvalidId'
 	| 'captureScreenshotNoActiveBrowser'
+	| 'exportPdf'
+	| 'exportPdfConfirmMessage'
+	| 'exportPdfConfirmDetail'
+	| 'exportPdfConfirmSave'
+	| 'exportPdfConfirmOverwriteMessage'
+	| 'exportPdfConfirmOverwriteDetail'
+	| 'exportPdfConfirmReplace'
+	| 'exportPdfSuccess'
+	| 'exportPdfFailed'
+	| 'exportPdfPageLoading'
 > = {
 	editPage: { en: 'Edit Page', 'zh-cn': '\u7F16\u8F91\u9875\u9762', 'zh-Hans': '\u7F16\u8F91\u9875\u9762' },
 	stopEditMode: { en: 'Stop Edit Mode', 'zh-cn': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F' },
@@ -217,14 +232,29 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditRemoveLast: { en: 'Cannot remove the last rendered element in the document.', 'zh-cn': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002', 'zh-Hans': '\u65E0\u6CD5\u5220\u9664\u6587\u6863\u4E2D\u6700\u540E\u4E00\u4E2A\u53EF\u6E32\u67D3\u5143\u7D20\u3002' },
 	htmlEditDcNestedComponent: { en: 'Edit nested components from their own .dc.html file.', 'zh-cn': '\u8BF7\u5728\u5BF9\u5E94\u7684 .dc.html \u6587\u4EF6\u4E2D\u7F16\u8F91\u5D4C\u5957\u7EC4\u4EF6\u3002', 'zh-Hans': '\u8BF7\u5728\u5BF9\u5E94\u7684 .dc.html \u6587\u4EF6\u4E2D\u7F16\u8F91\u5D4C\u5957\u7EC4\u4EF6\u3002' },
 	htmlEditDcTemplateMissing: { en: 'Could not find <x-dc> template in the source file.', 'zh-cn': '\u5728\u6E90\u6587\u4EF6\u4E2D\u672A\u627E\u5230 <x-dc> \u6A21\u677F\u3002', 'zh-Hans': '\u5728\u6E90\u6587\u4EF6\u4E2D\u672A\u627E\u5230 <x-dc> \u6A21\u677F\u3002' },
-	captureScreenshotNoPage: { en: 'No browser page found with ID {0}', 'zh-cn': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762', 'zh-Hans': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762' },
+	htmlEditDcPropImport: { en: 'Prop {0} — saved to <dc-import {0}="…"> in this file.', 'zh-cn': 'Prop {0} \u2014 \u4F1A\u5199\u5165\u672C\u6587\u4EF6\u7684 <dc-import {0}="\u2026">', 'zh-Hans': 'Prop {0} \u2014 \u4F1A\u5199\u5165\u672C\u6587\u4EF6\u7684 <dc-import {0}="\u2026">' },
+	htmlEditDcPropDefault: { en: 'Prop {0} — saved to data-props default in {1}.dc.html.', 'zh-cn': 'Prop {0} \u2014 \u4F1A\u5199\u5165 {1}.dc.html \u7684 data-props \u9ED8\u8BA4\u503C', 'zh-Hans': 'Prop {0} \u2014 \u4F1A\u5199\u5165 {1}.dc.html \u7684 data-props \u9ED8\u8BA4\u503C' },
+	htmlEditDcImportNotFound: { en: 'Could not find <dc-import> for this prop in the source.', 'zh-cn': '\u5728\u6E90\u6587\u4EF6\u4E2D\u627E\u4E0D\u5230\u5BF9\u5E94\u7684 <dc-import>', 'zh-Hans': '\u5728\u6E90\u6587\u4EF6\u4E2D\u627E\u4E0D\u5230\u5BF9\u5E94\u7684 <dc-import>' },
+	htmlEditDcPropsNotFound: { en: 'Could not find data-props for this component.', 'zh-cn': '\u627E\u4E0D\u5230\u8BE5\u7EC4\u4EF6\u7684 data-props', 'zh-Hans': '\u627E\u4E0D\u5230\u8BE5\u7EC4\u4EF6\u7684 data-props' },
+	browserPageNotFound: { en: 'No browser page found with ID {0}', 'zh-cn': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762', 'zh-Hans': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762' },
+	browserTabInvalidId: { en: 'Browser tab ID must be a non-empty string', 'zh-cn': '\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32', 'zh-Hans': '\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32' },
 	captureScreenshotNoActiveBrowser: { en: 'No active Integrated Browser editor', 'zh-cn': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668', 'zh-Hans': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668' },
+	exportPdf: { en: 'Export PDF', 'zh-cn': '\u5BFC\u51FA PDF', 'zh-Hans': '\u5BFC\u51FA PDF' },
+	exportPdfConfirmMessage: { en: 'Save as PDF?', 'zh-cn': '\u4FDD\u5B58\u4E3A PDF\uFF1F', 'zh-Hans': '\u4FDD\u5B58\u4E3A PDF\uFF1F' },
+	exportPdfConfirmDetail: { en: 'Save to {0}', 'zh-cn': '\u4FDD\u5B58\u5230 {0}', 'zh-Hans': '\u4FDD\u5B58\u5230 {0}' },
+	exportPdfConfirmSave: { en: 'Save', 'zh-cn': '\u4FDD\u5B58', 'zh-Hans': '\u4FDD\u5B58' },
+	exportPdfConfirmOverwriteMessage: { en: 'Replace existing PDF?', 'zh-cn': '\u66FF\u6362\u5DF2\u6709\u7684 PDF\uFF1F', 'zh-Hans': '\u66FF\u6362\u5DF2\u6709\u7684 PDF\uFF1F' },
+	exportPdfConfirmOverwriteDetail: { en: '{0} already exists and will be replaced.', 'zh-cn': '{0} \u5DF2\u5B58\u5728\uFF0C\u5C06\u88AB\u8986\u76D6\u3002', 'zh-Hans': '{0} \u5DF2\u5B58\u5728\uFF0C\u5C06\u88AB\u8986\u76D6\u3002' },
+	exportPdfConfirmReplace: { en: 'Replace', 'zh-cn': '\u66FF\u6362', 'zh-Hans': '\u66FF\u6362' },
+	exportPdfSuccess: { en: 'PDF saved successfully', 'zh-cn': 'PDF \u4FDD\u5B58\u6210\u529F', 'zh-Hans': 'PDF \u4FDD\u5B58\u6210\u529F' },
+	exportPdfFailed: { en: 'Failed to export PDF: {0}', 'zh-cn': '\u5BFC\u51FA PDF \u5931\u8D25\uFF1A{0}', 'zh-Hans': '\u5BFC\u51FA PDF \u5931\u8D25\uFF1A{0}' },
+	exportPdfPageLoading: { en: 'Wait for the page to finish loading.', 'zh-cn': '\u8BF7\u7B49\u5F85\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\u3002', 'zh-Hans': '\u8BF7\u7B49\u5F85\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\u3002' },
 };
 
 type BrowserViewLabelKey = keyof typeof browserViewLabels;
 
-export function browserViewLabel(key: BrowserViewLabelKey, fallback: string): string {
-	return miniLabel(browserViewLabels, key, fallback);
+export function browserViewLabel(key: BrowserViewLabelKey, fallback: string, ...args: (string | number | boolean | undefined | null)[]): string {
+	return miniLabel(browserViewLabels, key, fallback, ...args);
 }
 
 export function browserViewActionTitle(key: BrowserViewLabelKey, fallback: string): ILocalizedString {

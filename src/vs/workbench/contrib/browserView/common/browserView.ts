@@ -425,6 +425,7 @@ export interface IBrowserViewModel extends IDisposable {
 	reload(hard?: boolean): Promise<void>;
 	toggleDevTools(): Promise<void>;
 	captureScreenshot(options?: IBrowserViewCaptureScreenshotOptions): Promise<VSBuffer>;
+	exportToPdf(): Promise<VSBuffer>;
 	focus(force?: boolean): Promise<void>;
 	findInPage(text: string, options?: IBrowserViewFindInPageOptions): Promise<void>;
 	stopFindInPage(keepSelection?: boolean): Promise<void>;
@@ -445,9 +446,11 @@ export interface IBrowserViewModel extends IDisposable {
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
 	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void>;
+	reselectElementByDomPath(domPath: string): Promise<void>;
 	getDcAnnotatedTemplate(componentName: string): Promise<string | null>;
 	getDcRootName(): Promise<string | null>;
 	updateDcTemplate(componentName: string, templateHtml: string): Promise<void>;
+	updateDcProps(componentName: string, props: Record<string, unknown>): Promise<void>;
 	toggleContentFullscreen(enabled?: boolean): Promise<void>;
 	setDevice(device: IBrowserDeviceProfile | undefined): Promise<void>;
 }
@@ -790,6 +793,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return result;
 	}
 
+	async exportToPdf(): Promise<VSBuffer> {
+		return this.browserViewService.exportToPdf(this.id);
+	}
+
 	async focus(force?: boolean): Promise<void> {
 		return this.browserViewService.focus(this.id, force);
 	}
@@ -909,6 +916,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.applyHtmlEditPreview(this.id, preview);
 	}
 
+	async reselectElementByDomPath(domPath: string): Promise<void> {
+		return this.browserViewService.reselectElementByDomPath(this.id, domPath);
+	}
+
 	async getDcAnnotatedTemplate(componentName: string): Promise<string | null> {
 		return this.browserViewService.getDcAnnotatedTemplate(this.id, componentName);
 	}
@@ -919,6 +930,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	async updateDcTemplate(componentName: string, templateHtml: string): Promise<void> {
 		return this.browserViewService.updateDcTemplate(this.id, componentName, templateHtml);
+	}
+
+	async updateDcProps(componentName: string, props: Record<string, unknown>): Promise<void> {
+		return this.browserViewService.updateDcProps(this.id, componentName, props);
 	}
 
 	async toggleContentFullscreen(enabled?: boolean): Promise<void> {

@@ -1140,6 +1140,17 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			},
 		};
 
+		const browser: typeof vscode.browser = {
+			getOpenTabs() {
+				checkProposedApiEnabled(extension, 'browser');
+				return extHostBrowsers.getOpenTabs();
+			},
+			reloadTab(tabId: string) {
+				checkProposedApiEnabled(extension, 'browser');
+				return extHostBrowsers.reloadTab(tabId);
+			},
+		};
+
 		// namespace: workspace
 
 		const workspace: typeof vscode.workspace = {
@@ -1995,6 +2006,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			debug,
 			env,
 			extensions,
+			browser,
 			interactive,
 			l10n,
 			languages,

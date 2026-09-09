@@ -966,6 +966,41 @@ export class BrowserView extends Disposable {
 		return screenshot;
 	}
 
+	/**
+	 * Export the current page as PDF using Chromium's print pipeline.
+	 * For deck-stage presentations, dispatches beforeprint/afterprint so
+	 * @media print layout (one slide per page, hidden rail) is applied.
+	 */
+	async exportToPdf(): Promise<VSBuffer> {
+		if (!this._view.getVisible()) {
+			this._view.setVisible(true);
+			this._view.setVisible(false);
+		}
+
+		const webContents = this._view.webContents;
+		const isDeckStage = await webContents.executeJavaScript('!!document.querySelector(\'deck-stage\')', true);
+
+		if (isDeckStage) {
+			await webContents.executeJavaScript(`Promise.race([
+				document.fonts ? document.fonts.ready : Promise.resolve(),
+				new Promise(r => setTimeout(r, 2000))
+			]).then(() => { window.dispatchEvent(new Event('beforeprint')); })`, true);
+			try {
+				const buffer = await webContents.printToPDF({
+					printBackground: true,
+					preferCSSPageSize: true,
+					margins: { marginType: 'none' },
+				});
+				return VSBuffer.wrap(buffer);
+			} finally {
+				await webContents.executeJavaScript(`window.dispatchEvent(new Event('afterprint'))`, true);
+			}
+		}
+
+		const buffer = await webContents.printToPDF({ printBackground: true });
+		return VSBuffer.wrap(buffer);
+	}
+
 	// Capture a screenshot of the full scrollable document (beyond the viewport) via CDP.
 	private async _captureFullPageScreenshot(format: 'jpeg' | 'png', quality: number): Promise<VSBuffer> {
 		const metrics = await this.debugger.sendCommand('Page.getLayoutMetrics') as { cssContentSize?: { width: number; height: number } };
@@ -1119,7 +1154,23 @@ export class BrowserView extends Disposable {
 		}
 		try {
 			await this._view.webContents.executeJavaScript(
-				`(function(name,html){try{window.__dcUpdate?.(name,'html',html,false)}catch(e){}})(${JSON.stringify(componentName)},${JSON.stringify(templateHtml)})`,
+				`(function(name,html){try{const cur=window.__dcTemplateSource?.(name);if(cur===html)return;window.__dcUpdate?.(name,'html',html,false)}catch(e){}})(${JSON.stringify(componentName)},${JSON.stringify(templateHtml)})`,
+				true,
+			);
+		} catch {
+			// ignore
+		}
+	}
+
+	async updateDcProps(componentName: string, props: Record<string, unknown>): Promise<void> {
+		if (this._view.webContents.isLoading()) {
+			return;
+		}
+		try {
+			// DC runtime `parseDataProps` expects a JSON string, not a parsed object.
+			const propsJson = JSON.stringify(props);
+			await this._view.webContents.executeJavaScript(
+				`(function(name,propsJson){try{window.__dcUpdate?.(name,'props',propsJson,false)}catch(e){}})(${JSON.stringify(componentName)},${JSON.stringify(propsJson)})`,
 				true,
 			);
 		} catch {

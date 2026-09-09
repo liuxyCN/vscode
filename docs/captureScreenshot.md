@@ -174,6 +174,6 @@ Add to Chat 需要 Chat 功能已启用（`chatIsEnabled`），且截图会出�
 ## 注意事项
 
 1. **无公开 Extension API**：目前未在 `vscode.d.ts` 中声明专用 API，扩展需通过 `vscode.commands.executeCommand` 调用。
-2. **`pageId` 获取**：默认使用当前活动的浏览器标签页。若需指定其他标签，需已知其内部 page ID（通常由 Agent 工具 `open_browser` / `list_browser_pages` 返回）。
+2. **`pageId` 获取**：默认使用当前活动的浏览器标签页。若需指定其他标签，需已知其内部 page ID（通常由 Agent 工具 `open_browser` / `list_browser_pages` 返回，或通过 [`browserTabExtensionApi.md`](./browserTabExtensionApi.md) 中的 `vscode.browser.getOpenTabs()` 获取）。
 3. **后台标签页**：底层实现会短暂激活渲染管线以支持后台标签截图，一般对用户无感知。
 4. **整页截图尺寸**：整页截图最大边长受内部限制（约 2576px），超长页面会被缩放。

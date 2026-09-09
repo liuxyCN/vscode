@@ -60,6 +60,84 @@ export interface IDcTplLocator {
 	readonly tplId: number;
 }
 
+/** Attribute stamped on picked elements when nested inside a parent `<dc-import>`. */
+export const DC_IMPORT_TPL_ATTR = 'data-dc-import-tpl';
+/** Prop name when template source at tpl id is a sole `{{prop}}` hole. */
+export const DC_PROP_HOLE_ATTR = 'data-dc-prop-hole';
+/** Where a prop-hole text edit should be written back (`import` | `default`). */
+export const DC_PROP_SOURCE_ATTR = 'data-dc-prop-source';
+
+export type DcPropSourceKind = 'import' | 'default';
+
+export interface IDcPropBinding {
+	readonly propName: string;
+	readonly source: DcPropSourceKind;
+	readonly importTplId?: number;
+	readonly componentName?: string;
+}
+
+/** True when `text` is a single DC interpolation hole, e.g. `{{title}}` or `{{ item1 }}`. */
+export function detectDcPropHole(text: string): string | undefined {
+	const match = text.trim().match(/^\{\{\s*([\w$]+)\s*\}\}$/);
+	return match?.[1];
+}
+
+export function getDcImportTplId(data: { readonly attributes?: Record<string, string> }): number | undefined {
+	const raw = data.attributes?.[DC_IMPORT_TPL_ATTR];
+	if (raw === undefined || raw === '') {
+		return undefined;
+	}
+	const tplId = Number(raw);
+	return Number.isInteger(tplId) && tplId >= 0 ? tplId : undefined;
+}
+
+/**
+ * Decides where a `{{prop}}` text edit is written back.
+ *
+ * `ownerComponentName` is the component whose template the associated file defines: the name
+ * derived from a `<name>.dc.html` file, or the page's DC root name for a plain `.html` host. When
+ * the picked element belongs to a different component, the value the user sees comes from the
+ * `<dc-import>` in this file; otherwise it comes from the component's own `data-props` default.
+ *
+ * The owner's own root element also carries a `data-dc-import-tpl` stamp (its root tpl id differs
+ * from the picked element's), so the name comparison is what keeps that case out of `import`.
+ */
+export function resolveDcPropSource(
+	data: { readonly attributes?: Record<string, string> },
+	ownerComponentName: string | undefined,
+	componentName: string | undefined,
+): DcPropSourceKind {
+	const importTplId = getDcImportTplId(data);
+	if (importTplId !== undefined && ownerComponentName && componentName && ownerComponentName !== componentName) {
+		return 'import';
+	}
+	return 'default';
+}
+
+export function getDcPropBinding(
+	data: { readonly attributes?: Record<string, string> },
+	fileComponentName?: string,
+): IDcPropBinding | undefined {
+	const propName = data.attributes?.[DC_PROP_HOLE_ATTR];
+	if (!propName) {
+		return undefined;
+	}
+	const sourceRaw = data.attributes?.[DC_PROP_SOURCE_ATTR];
+	if (sourceRaw !== 'import' && sourceRaw !== 'default') {
+		return undefined;
+	}
+	return {
+		propName,
+		source: sourceRaw,
+		importTplId: getDcImportTplId(data),
+		componentName: data.attributes?.['data-sc-name'],
+	};
+}
+
+export function propNameToHtmlAttribute(propName: string): string {
+	return propName.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`);
+}
+
 export function buildDcTplDomPath(locator: IDcTplLocator): string {
 	if (locator.componentName) {
 		return `dc:${locator.componentName}:tpl-${locator.tplId}`;
@@ -290,7 +368,7 @@ const SOURCE_TEXT_TAGS = new Set([
 const IGNORABLE_INLINE_CHILD_TAGS = new Set(['br', 'wbr']);
 
 /** Block-level or DC structural tags — their presence means layout, not a text leaf. */
-function isStructuralChildTag(tag: string): boolean {
+export function isStructuralChildTag(tag: string): boolean {
 	if (DC_CONTAINER_TAGS.has(tag) || LAYOUT_CONTAINER_TAGS.has(tag)) {
 		return true;
 	}
@@ -407,6 +485,16 @@ function parseOuterHtmlRootElement(outerHTML: string): Element | undefined {
 	}
 }
 
+export function shouldShowHtmlEditTextField(data: IElementData | undefined, kind: BrowserHtmlEditKind): boolean {
+	if (!data) {
+		return false;
+	}
+	if (kind === 'text' || kind === 'link') {
+		return true;
+	}
+	return !!(data.innerText ?? '').trim();
+}
+
 export function inferBrowserHtmlEditKindFromSourceElement(element: Element): BrowserHtmlEditKind {
 	const tag = element.tagName.toLowerCase();
 	if (tag === 'a') {
@@ -448,6 +536,9 @@ export function inferBrowserHtmlEditKind(data: IElementData): BrowserHtmlEditKin
 	}
 	if (DC_CONTAINER_TAGS.has(tag)) {
 		return 'container';
+	}
+	if (SOURCE_TEXT_TAGS.has(tag)) {
+		return 'text';
 	}
 	if (LAYOUT_CONTAINER_TAGS.has(tag)) {
 		const root = parseOuterHtmlRootElement(data.outerHTML);

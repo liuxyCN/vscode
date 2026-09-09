@@ -19,8 +19,10 @@ import { BrowserAutoReloadService, BrowserAutoReloadWatcher, IBrowserAutoReloadS
 
 suite('Browser Auto Reload Features', () => {
 	const disposables = new DisposableStore();
-	const autoReloadService = new TestAutoReloadService();
+	// Instantiated in `setup` because the helper class is declared below this suite.
+	let autoReloadService: TestAutoReloadService;
 
+	setup(() => { autoReloadService = new TestAutoReloadService(); });
 	teardown(() => disposables.clear());
 	ensureNoDisposablesAreLeakedInTestSuite();
 

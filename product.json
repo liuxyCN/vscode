@@ -158,6 +158,9 @@
 			"GitHub.copilot-chat"
 		]
 	},
+	"extensionEnabledApiProposals": {
+		"NeonTractorInc.neontractor-ai": ["browser", "textDocumentChangeReason"]
+	},
 	"onboardingKeymaps": [
 		{
 			"id": "vscode",

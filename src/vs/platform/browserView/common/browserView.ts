@@ -28,6 +28,7 @@ export enum BrowserViewCommandId {
 	GoForward = `${commandPrefix}.goForward`,
 	Reload = `${commandPrefix}.reload`,
 	HardReload = `${commandPrefix}.hardReload`,
+	ReloadTab = `${commandPrefix}.reloadTab`,
 
 	// Editor actions
 	FocusUrlInput = `${commandPrefix}.focusUrlInput`,
@@ -51,6 +52,7 @@ export enum BrowserViewCommandId {
 	AddAreaScreenshotToChat = `${commandPrefix}.addAreaScreenshotToChat`,
 	AddFullPageScreenshotToChat = `${commandPrefix}.addFullPageScreenshotToChat`,
 	CaptureScreenshot = `${commandPrefix}.captureScreenshot`,
+	ExportPdf = `${commandPrefix}.exportPdf`,
 
 	// Dev Tools
 	ToggleDevTools = `${commandPrefix}.toggleDevTools`,
@@ -659,6 +661,12 @@ export interface IBrowserViewService {
 	captureScreenshot(id: string, options?: IBrowserViewCaptureScreenshotOptions): Promise<VSBuffer>;
 
 	/**
+	 * Export the browser view page as a PDF via the print pipeline (not a screenshot).
+	 * @param id The browser view identifier
+	 */
+	exportToPdf(id: string): Promise<VSBuffer>;
+
+	/**
 	 * Focus the browser view
 	 * @param id The browser view identifier
 	 * @param force Whether to force focus even if the view's window is not focused.
@@ -815,6 +823,11 @@ export interface IBrowserViewService {
 	applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void>;
 
 	/**
+	 * Re-inspect the element at `domPath` in the loaded page (fires {@link onDynamicDidSelectElement}).
+	 */
+	reselectElementByDomPath(id: string, domPath: string): Promise<void>;
+
+	/**
 	 * Fetch the encoded, `data-dc-tpl`-annotated template from a DC runtime page (`window.__dcAnnotatedTemplate`).
 	 */
 	getDcAnnotatedTemplate(id: string, componentName: string): Promise<string | null>;
@@ -828,6 +841,11 @@ export interface IBrowserViewService {
 	 * Push an updated decoded template into a running DC runtime (`window.__dcUpdate`).
 	 */
 	updateDcTemplate(id: string, componentName: string, templateHtml: string): Promise<void>;
+
+	/**
+	 * Push updated component prop defaults into a running DC runtime (`window.__dcUpdate`).
+	 */
+	updateDcProps(id: string, componentName: string, props: Record<string, unknown>): Promise<void>;
 
 	/**
 	 * Expand the browser view to fill the host window's client area.

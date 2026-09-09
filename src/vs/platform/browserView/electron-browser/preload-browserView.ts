@@ -151,6 +151,24 @@ function init() {
 	ipcRenderer.on('vscode:browserView:editTextFinish', (_event: unknown, data: { commit?: boolean }) => {
 		htmlEditBridge.finishActiveTextEdit(data?.commit !== false);
 	});
+	ipcRenderer.on('vscode:browserView:reselectByDomPath', (_event: unknown, domPath: string) => {
+		if (!domPath) {
+			return;
+		}
+		const el = findElementByDomPath(domPath);
+		if (!el) {
+			return;
+		}
+		const elementId = track(el);
+		const dcStamp = dcStampAttributesForElement(el);
+		ipcRenderer.send('vscode:browserView:elementPicked', {
+			elementId,
+			domPath: domPathForElement(el),
+			dcTplId: dcStamp.dcTplId,
+			dcComponentName: dcStamp.dcComponentName,
+			dcImportTplId: dcStamp.dcImportTplId,
+		});
+	});
 
 	const elementPicker = new ElementPicker(
 		(el, comment) => {
@@ -162,6 +180,7 @@ function init() {
 				domPath: domPathForElement(el),
 				dcTplId: dcStamp.dcTplId,
 				dcComponentName: dcStamp.dcComponentName,
+				dcImportTplId: dcStamp.dcImportTplId,
 			});
 			return elementId;
 		},
@@ -427,7 +446,7 @@ function domPathForElement(el: Element): string {
 	return parts.length ? `path-${parts.join('-')}` : '';
 }
 
-function dcStampAttributesForElement(el: Element): { dcTplId?: string; dcComponentName?: string } {
+function dcStampAttributesForElement(el: Element): { dcTplId?: string; dcComponentName?: string; dcImportTplId?: string } {
 	const stamped = domPathStampTarget(el);
 	const tplId = stamped?.getAttribute('data-dc-tpl');
 	if (!tplId) {
@@ -435,7 +454,9 @@ function dcStampAttributesForElement(el: Element): { dcTplId?: string; dcCompone
 	}
 	const host = el.closest('[data-sc-name]');
 	const dcName = host?.getAttribute('data-sc-name') ?? dcRootNameFromWindow() ?? undefined;
-	return { dcTplId: tplId, dcComponentName: dcName };
+	const hostTplId = host?.getAttribute('data-dc-tpl');
+	const dcImportTplId = host && hostTplId && hostTplId !== tplId ? hostTplId : undefined;
+	return { dcTplId: tplId, dcComponentName: dcName, dcImportTplId };
 }
 
 function cssEscapeSelectorValue(value: string): string {
@@ -975,6 +996,8 @@ class HtmlEditBridge {
 			}
 		}
 		if (typeof preview.text === 'string' && el !== document.body) {
+			// Programmatic DOM writes do not fire `input`, so the inline edit session cannot
+			// echo this preview back as a commit.
 			if (canApplyTextPreview(el)) {
 				applyTextPreview(el, preview.text);
 			} else if (el.childElementCount === 0) {
@@ -1958,9 +1981,8 @@ class ElementPicker {
 				this._onPicked(target);
 				if (this._htmlEdit?.shouldStartInlineEdit(target)) {
 					this._htmlEdit.makeEditable(target, pointerEvent);
-				} else {
-					this._updateHighlight(target);
 				}
+				this._updateHighlight(target);
 			});
 			return;
 		}

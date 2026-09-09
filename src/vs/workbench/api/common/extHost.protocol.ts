@@ -1433,6 +1433,7 @@ export interface BrowserTabDto {
 export interface MainThreadBrowsersShape extends IDisposable {
 	$openBrowserTab(url: string, viewColumn?: EditorGroupColumn, options?: IEditorOptions): Promise<BrowserTabDto>;
 	$closeBrowserTab(browserId: string): Promise<void>;
+	$reloadBrowserTab(browserId: string): Promise<void>;
 	$startCDPSession(sessionId: string, browserId: string): Promise<void>;
 	$closeCDPSession(sessionId: string): Promise<void>;
 	$sendCDPMessage(sessionId: string, message: CDPRequest): Promise<void>;

@@ -497,6 +497,15 @@ export class BrowserViewInspector extends Disposable {
 		}
 	}
 
+	reselectElementByDomPath(domPath: string): void {
+		if (!domPath) {
+			return;
+		}
+		for (const inspector of this._registry.inspectors) {
+			inspector.reselectElementByDomPath(domPath);
+		}
+	}
+
 	finishHtmlEditTextSession(commit: boolean): void {
 		for (const inspector of this._registry.inspectors) {
 			inspector.finishHtmlEditTextSession(commit);

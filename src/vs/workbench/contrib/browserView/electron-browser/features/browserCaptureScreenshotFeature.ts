@@ -59,7 +59,7 @@ CommandsRegistry.registerCommand({
 		const model = await resolveBrowserViewModel(accessor, args?.pageId);
 		if (!model) {
 			throw new Error(args?.pageId
-				? browserViewLabel('captureScreenshotNoPage', 'No browser page found with ID {0}').replace('{0}', args.pageId)
+				? browserViewLabel('browserPageNotFound', 'No browser page found with ID {0}', args.pageId)
 				: browserViewLabel('captureScreenshotNoActiveBrowser', 'No active Integrated Browser editor'));
 		}
 

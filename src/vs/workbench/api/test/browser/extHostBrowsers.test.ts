@@ -29,6 +29,7 @@ suite('ExtHostBrowsers', () => {
 	function createExtHostBrowsers(overrides?: Partial<MainThreadBrowsersShape>): ExtHostBrowsers {
 		const proxy = new class extends mock<MainThreadBrowsersShape>() {
 			override $openBrowserTab(): Promise<BrowserTabDto> { return Promise.resolve(createDto()); }
+			override $reloadBrowserTab(): Promise<void> { return Promise.resolve(); }
 			override $startCDPSession(): Promise<void> { return Promise.resolve(); }
 			override $closeCDPSession(): Promise<void> { return Promise.resolve(); }
 			override $sendCDPMessage(): Promise<void> { return Promise.resolve(); }
@@ -261,10 +262,56 @@ suite('ExtHostBrowsers', () => {
 		const tab = extHost.browserTabs[0];
 
 		// Attempting to assign to getter-only properties should either throw or be silently ignored
+		assert.throws(() => { (tab as unknown as Record<string, unknown>).id = 'hacked'; });
 		assert.throws(() => { (tab as unknown as Record<string, unknown>).url = 'https://hacked.com'; });
 		assert.throws(() => { (tab as unknown as Record<string, unknown>).title = 'Hacked'; });
+		assert.strictEqual(tab.id, 'b1');
 		assert.strictEqual(tab.url, 'https://example.com');
 		assert.strictEqual(tab.title, 'Title');
+	});
+
+	test('tab exposes filePath for file URLs and isActive tracks active tab', () => {
+		const extHost = createExtHostBrowsers();
+		extHost.$onDidOpenBrowserTab(createDto({ id: 'b1', url: 'file:///workspace/index.html', title: 'Index' }));
+		extHost.$onDidOpenBrowserTab(createDto({ id: 'b2', url: 'https://example.com', title: 'Example' }));
+		extHost.$onDidChangeActiveBrowserTab('b1');
+
+		const activeTab = extHost.browserTabs.find(t => t.id === 'b1')!;
+		const inactiveTab = extHost.browserTabs.find(t => t.id === 'b2')!;
+
+		assert.strictEqual(activeTab.filePath, '/workspace/index.html');
+		assert.strictEqual(activeTab.isActive, true);
+		assert.strictEqual(inactiveTab.filePath, undefined);
+		assert.strictEqual(inactiveTab.isActive, false);
+	});
+
+	test('getOpenTabs returns BrowserTabInfo snapshot', () => {
+		const extHost = createExtHostBrowsers();
+		extHost.$onDidOpenBrowserTab(createDto({ id: 'b1', url: 'file:///tmp/page.html' }));
+		extHost.$onDidChangeActiveBrowserTab('b1');
+
+		const tabs = extHost.getOpenTabs();
+		assert.strictEqual(tabs.length, 1);
+		assert.deepStrictEqual(tabs[0], {
+			id: 'b1',
+			url: 'file:///tmp/page.html',
+			filePath: '/tmp/page.html',
+			isActive: true,
+		});
+	});
+
+	test('reloadTab calls $reloadBrowserTab on proxy', async () => {
+		let capturedTabId: string | undefined;
+		const extHost = createExtHostBrowsers({
+			$reloadBrowserTab: (tabId: string) => {
+				capturedTabId = tabId;
+				return Promise.resolve();
+			},
+		});
+
+		await extHost.reloadTab('tab-123');
+
+		assert.strictEqual(capturedTabId, 'tab-123');
 	});
 
 	test('startCDPSession calls $startCDPSession on proxy', async () => {

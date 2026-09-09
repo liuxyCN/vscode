@@ -5,6 +5,7 @@
 
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
+import { Schemas } from '../../../base/common/network.js';
 import { URI } from '../../../base/common/uri.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import type * as vscode from 'vscode';
@@ -15,6 +16,19 @@ import * as typeConverters from './extHostTypeConverters.js';
 import { CDPEvent, CDPRequest, CDPResponse } from '../../../platform/browserView/common/cdp/types.js';
 
 // #region Internal browser tab object
+
+function getFilePathFromUrl(url: string): string | undefined {
+	if (!url) {
+		return undefined;
+	}
+
+	try {
+		const uri = URI.parse(url);
+		return uri.scheme === Schemas.file ? uri.fsPath : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 class ExtHostBrowserTab {
 	private _url: string;
@@ -27,6 +41,7 @@ class ExtHostBrowserTab {
 		readonly id: string,
 		private readonly _proxy: MainThreadBrowsersShape,
 		private readonly _sessions: DisposableMap<string, ExtHostBrowserCDPSession>,
+		private readonly _isActive: () => boolean,
 		data: BrowserTabDto,
 	) {
 		this._url = data.url;
@@ -35,7 +50,10 @@ class ExtHostBrowserTab {
 
 		const that = this;
 		this.value = {
+			get id(): string { return that.id; },
 			get url(): string { return that._url; },
+			get filePath(): string | undefined { return getFilePathFromUrl(that._url); },
+			get isActive(): boolean { return that._isActive(); },
 			get title(): string { return that._title; },
 			get icon(): vscode.IconPath {
 				return that._favicon
@@ -202,6 +220,20 @@ export class ExtHostBrowsers extends Disposable implements ExtHostBrowsersShape 
 		return this._getOrCreateTab(dto).value;
 	}
 
+	getOpenTabs(): readonly vscode.BrowserTabInfo[] {
+		return this.browserTabs.map(tab => ({
+			id: tab.id,
+			url: tab.url,
+			filePath: tab.filePath,
+			isActive: tab.isActive,
+		}));
+	}
+
+	async reloadTab(tabId: string): Promise<void> {
+		// Validation lives in `reloadBrowserTab` on the main thread so that the message is localized.
+		await this._proxy.$reloadBrowserTab(tabId);
+	}
+
 	// #endregion
 
 	// #region Internal helpers
@@ -209,7 +241,7 @@ export class ExtHostBrowsers extends Disposable implements ExtHostBrowsersShape 
 	private _getOrCreateTab(dto: BrowserTabDto): ExtHostBrowserTab {
 		let tab = this._browserTabs.get(dto.id);
 		if (!tab) {
-			tab = new ExtHostBrowserTab(dto.id, this._proxy, this._sessions, dto);
+			tab = new ExtHostBrowserTab(dto.id, this._proxy, this._sessions, () => this._activeBrowserTabId === dto.id, dto);
 			this._browserTabs.set(dto.id, tab);
 			this._onDidOpenBrowserTab.fire(tab.value);
 		} else {

@@ -188,7 +188,7 @@ export class BrowserViewFrameInspector extends Disposable {
 		}));
 
 		// Listen for element-picked IPC from this frame's preload
-		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string; domPath?: string; dcTplId?: string; dcComponentName?: string }) => {
+		const onPicked = async (event: Electron.IpcMainEvent, result: { elementId?: string; comment?: string; domPath?: string; dcTplId?: string; dcComponentName?: string; dcImportTplId?: string }) => {
 			if (!result?.elementId || event.senderFrame !== this.frame) {
 				return;
 			}
@@ -200,6 +200,9 @@ export class BrowserViewFrameInspector extends Disposable {
 				}
 				if (result.dcComponentName) {
 					attributes['data-sc-name'] = result.dcComponentName;
+				}
+				if (result.dcImportTplId) {
+					attributes['data-dc-import-tpl'] = result.dcImportTplId;
 				}
 				this._onDidInspectElement.fire({
 					...nodeData,
@@ -281,6 +284,13 @@ export class BrowserViewFrameInspector extends Disposable {
 			return;
 		}
 		this.frame.postMessage('vscode:browserView:editTextFinish', { commit });
+	}
+
+	reselectElementByDomPath(domPath: string): void {
+		if (this.frame.isDestroyed() || !domPath) {
+			return;
+		}
+		this.frame.postMessage('vscode:browserView:reselectByDomPath', domPath);
 	}
 
 	/**

@@ -289,6 +289,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).captureScreenshot(options);
 	}
 
+	async exportToPdf(id: string): Promise<VSBuffer> {
+		return this._getBrowserView(id).exportToPdf();
+	}
+
 	async focus(id: string, force?: boolean): Promise<void> {
 		return this._getBrowserView(id).focus(force);
 	}
@@ -377,6 +381,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.applyHtmlEditPreview(preview);
 	}
 
+	async reselectElementByDomPath(id: string, domPath: string): Promise<void> {
+		this._getBrowserView(id).inspector.reselectElementByDomPath(domPath);
+	}
+
 	async getDcAnnotatedTemplate(id: string, componentName: string): Promise<string | null> {
 		return this._getBrowserView(id).getDcAnnotatedTemplate(componentName);
 	}
@@ -387,6 +395,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	async updateDcTemplate(id: string, componentName: string, templateHtml: string): Promise<void> {
 		return this._getBrowserView(id).updateDcTemplate(componentName, templateHtml);
+	}
+
+	async updateDcProps(id: string, componentName: string, props: Record<string, unknown>): Promise<void> {
+		return this._getBrowserView(id).updateDcProps(componentName, props);
 	}
 
 	onDynamicDidCommitHtmlEditText(id: string) {

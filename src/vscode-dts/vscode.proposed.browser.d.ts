@@ -8,11 +8,37 @@ declare module 'vscode' {
 	// @kycutler https://github.com/microsoft/vscode/issues/300319
 
 	/**
+	 * Summary information about an open Integrated Browser tab.
+	 */
+	export interface BrowserTabInfo {
+		/** Stable tab identifier. Use with {@link browser.reloadTab}. */
+		readonly id: string;
+
+		/** The current URL of the page. */
+		readonly url: string;
+
+		/** Absolute file path when {@link url} uses the `file:` scheme. */
+		readonly filePath?: string;
+
+		/** Whether this tab is the active Integrated Browser editor. */
+		readonly isActive: boolean;
+	}
+
+	/**
 	 * An integrated browser page displayed in an editor tab.
 	 */
 	export interface BrowserTab {
+		/** Stable tab identifier. Use with {@link browser.reloadTab}. */
+		readonly id: string;
+
 		/** The current URL of the page. */
 		readonly url: string;
+
+		/** Absolute file path when {@link url} uses the `file:` scheme. */
+		readonly filePath?: string;
+
+		/** Whether this tab is the active Integrated Browser editor. */
+		readonly isActive: boolean;
 
 		/** The current page title. */
 		readonly title: string;
@@ -88,5 +114,19 @@ declare module 'vscode' {
 		 * @returns The {@link BrowserTab} representing the opened page.
 		 */
 		export function openBrowserTab(url: string, options?: BrowserTabShowOptions): Thenable<BrowserTab>;
+	}
+
+	export namespace browser {
+		/**
+		 * Returns a snapshot of all open Integrated Browser tabs.
+		 */
+		export function getOpenTabs(): readonly BrowserTabInfo[];
+
+		/**
+		 * Reload the Integrated Browser tab with the given {@link BrowserTabInfo.id id}.
+		 *
+		 * @param tabId The tab identifier from {@link getOpenTabs} or {@link BrowserTab.id}.
+		 */
+		export function reloadTab(tabId: string): Thenable<void>;
 	}
 }

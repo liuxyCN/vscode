@@ -16,6 +16,7 @@ import { IConfigurationService } from '../../../platform/configuration/common/co
 import { IEditorOptions } from '../../../platform/editor/common/editor.js';
 import { CDPRequest } from '../../../platform/browserView/common/cdp/types.js';
 import { BrowserEditorInput } from '../../contrib/browserView/common/browserEditorInput.js';
+import { reloadBrowserTab } from '../../contrib/browserView/common/browserReloadTab.js';
 
 @extHostNamedCustomer(MainContext.MainThreadBrowsers)
 export class MainThreadBrowsers extends Disposable implements MainThreadBrowsersShape {
@@ -168,6 +169,10 @@ export class MainThreadBrowsers extends Disposable implements MainThreadBrowsers
 			throw new Error(`Unknown browser id: ${browserId}`);
 		}
 		known.input.dispose();
+	}
+
+	async $reloadBrowserTab(browserId: string): Promise<void> {
+		await reloadBrowserTab(this.browserViewService, browserId);
 	}
 
 	// #endregion

@@ -249,15 +249,16 @@ export type MiniI18nTable<T extends string> = Record<T, Record<string, string>>;
  * Resolves a label from a feature-local translation table using {@link getNLSLanguage},
  * without registering keys in the global NLS index.
  */
-export function miniLabel<T extends string>(table: MiniI18nTable<T>, key: T, fallback: string): string {
+export function miniLabel<T extends string>(table: MiniI18nTable<T>, key: T, fallback: string, ...args: (string | number | boolean | undefined | null)[]): string {
 	const language = getNLSLanguage();
+	let message = fallback;
 	if (language) {
 		const label = table[key]?.[language];
 		if (label) {
-			return label;
+			message = label;
 		}
 	}
-	return fallback;
+	return _format(message, args);
 }
 
 /**

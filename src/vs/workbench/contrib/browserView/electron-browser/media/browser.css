@@ -53,6 +53,13 @@
 
 	.browser-actions-toolbar {
 		margin-right: 4px;
+
+		/* Edit Page and Export PDF are the two authoring entry points, tinted with */
+		/* the accent the editor picker uses for its active option border. */
+		.action-item > .action-label.codicon-edit,
+		.action-item > .action-label.codicon-file-pdf {
+			color: #ff9b50;
+		}
 	}
 
 	.browser-url-container {
@@ -861,6 +868,13 @@
 			font-size: 12px;
 			opacity: 0.75;
 		}
+	}
+
+	.browser-html-edit-prop-hint {
+		font-size: 11px;
+		line-height: 1.35;
+		opacity: 0.65;
+		margin-top: -2px;
 	}
 
 	.browser-html-edit-collapsible-field {

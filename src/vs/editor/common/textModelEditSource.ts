@@ -196,6 +196,7 @@ export const EditSources = {
 	setValue: () => createEditSource({ source: 'setValue' } as const),
 	eolChange: () => createEditSource({ source: 'eolChange' } as const),
 	applyEdits: () => createEditSource({ source: 'applyEdits' } as const),
+	browserHtmlEdit: () => createEditSource({ source: 'browserHtmlEdit' } as const),
 	snippet: () => createEditSource({ source: 'snippet' } as const),
 	suggest: (data: { providerId: ProviderId | undefined }) => createEditSource({ source: 'suggest', ...toProperties(data.providerId) } as const),
 
