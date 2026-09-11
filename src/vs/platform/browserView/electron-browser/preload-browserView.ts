@@ -137,6 +137,7 @@ function init() {
 	});
 
 	const elementPickerRef: { current?: ElementPicker } = {};
+	const htmlLayoutEditBridge = new HtmlLayoutEditBridge();
 	const htmlEditBridge = new HtmlEditBridge(
 		payload => {
 			ipcRenderer.send('vscode:browserView:htmlEditTextCommit', payload);
@@ -187,8 +188,12 @@ function init() {
 		elementId => ipcRenderer.send('vscode:browserView:elementCommentRemoved', elementId),
 		() => ipcRenderer.send('vscode:browserView:elementPickStopped'),
 		htmlEditBridge,
+		htmlLayoutEditBridge,
 	);
 	elementPickerRef.current = elementPicker;
+	ipcRenderer.on('vscode:browserView:setHtmlLayoutMode', (_event: unknown, data: { active?: boolean }) => {
+		elementPicker.setHtmlLayoutMode(data?.active === true);
+	});
 
 	const areaPicker = new AreaPicker(
 		rect => ipcRenderer.send('vscode:browserView:areaPicked', rect),
@@ -1019,6 +1024,649 @@ class HtmlEditBridge {
 	}
 }
 
+const HTML_LAYOUT_EDIT_OUTLINE_BLUE = '#0078d4';
+const HTML_LAYOUT_EDIT_OUTLINE_ORANGE = '#ca5010';
+interface IHtmlLayoutGapHit {
+	readonly container: HTMLElement;
+	readonly axis: 'column' | 'row';
+	/** Sorted track index of the child before the gap (not DOM index). */
+	readonly index: number;
+}
+
+interface IHtmlLayoutContainerSnapshot {
+	readonly style: string;
+	readonly tplC: string | null;
+	readonly tplR: string | null;
+	readonly minC: string | null;
+	readonly minR: string | null;
+	readonly childOrder: readonly Element[];
+}
+
+interface IHtmlLayoutDragState {
+	readonly pointerId: number;
+	readonly startX: number;
+	readonly startY: number;
+	readonly gap: IHtmlLayoutGapHit;
+	readonly startSizes: readonly number[];
+	readonly startTrackTotalPx: number;
+}
+
+function htmlLayoutDeckCanvasScale(): number {
+	const deck = document.querySelector('deck-stage');
+	const canvas = deck?.shadowRoot?.querySelector('.canvas');
+	if (!(canvas instanceof HTMLElement)) {
+		return 1;
+	}
+	const inline = canvas.style.transform;
+	const inlineMatch = inline.match(/scale\(([\d.]+)\)/);
+	if (inlineMatch) {
+		return parseFloat(inlineMatch[1]!) || 1;
+	}
+	const transform = getComputedStyle(canvas).transform;
+	if (!transform || transform === 'none') {
+		return 1;
+	}
+	const matrixMatch = transform.match(/matrix\(([^)]+)\)/);
+	if (!matrixMatch) {
+		return 1;
+	}
+	const parts = matrixMatch[1]!.split(',').map(part => parseFloat(part.trim()));
+	return parts[0] || 1;
+}
+
+function htmlLayoutActiveSlideRoot(): HTMLElement {
+	const activeSlide = document.querySelector('section[data-deck-active]');
+	if (activeSlide instanceof HTMLElement) {
+		return activeSlide;
+	}
+	const deck = document.querySelector('deck-stage');
+	if (deck) {
+		for (const child of deck.children) {
+			if (child instanceof HTMLElement && child.hasAttribute('data-deck-active')) {
+				return child;
+			}
+		}
+	}
+	return document.body;
+}
+
+function htmlLayoutIsGridContainer(element: Element | null | undefined): element is HTMLElement {
+	return element instanceof HTMLElement && element.hasAttribute('data-dc-grid');
+}
+
+function htmlLayoutElementFromPoint(clientX: number, clientY: number): Element | null {
+	const previous = document.documentElement.style.pointerEvents;
+	document.documentElement.style.pointerEvents = 'none';
+	let target: Element | null = null;
+	try {
+		target = document.elementFromPoint(clientX, clientY);
+	} finally {
+		document.documentElement.style.pointerEvents = previous;
+	}
+	return target;
+}
+
+function htmlLayoutTrackChildren(container: HTMLElement): HTMLElement[] {
+	return [...container.children].filter((child): child is HTMLElement => {
+		if (!(child instanceof HTMLElement)) {
+			return false;
+		}
+		const position = getComputedStyle(child).position;
+		return position !== 'absolute' && position !== 'fixed';
+	});
+}
+
+function htmlLayoutSortedChildren(container: HTMLElement, axis: 'column' | 'row'): HTMLElement[] {
+	return htmlLayoutTrackChildren(container).sort((left, right) => {
+		const leftRect = left.getBoundingClientRect();
+		const rightRect = right.getBoundingClientRect();
+		return axis === 'column' ? leftRect.left - rightRect.left : leftRect.top - rightRect.top;
+	});
+}
+
+function htmlLayoutTemplateTrackCount(template: string | null | undefined): number {
+	if (!template || template === 'none') {
+		return 0;
+	}
+	const repeatMatch = template.match(/repeat\s*\(\s*(\d+)\s*,/i);
+	if (repeatMatch) {
+		return parseInt(repeatMatch[1]!, 10) || 0;
+	}
+	return template.split(/\s+/).filter(Boolean).length;
+}
+
+function htmlLayoutTrackCount(container: HTMLElement, axis: 'column' | 'row'): number {
+	const attr = axis === 'column' ? container.getAttribute('data-tpl-c') : container.getAttribute('data-tpl-r');
+	if (attr) {
+		const attrCount = htmlLayoutTemplateTrackCount(attr);
+		if (attrCount > 0) {
+			return attrCount;
+		}
+	}
+	const style = getComputedStyle(container);
+	const computed = axis === 'column' ? style.gridTemplateColumns : style.gridTemplateRows;
+	const computedCount = htmlLayoutTemplateTrackCount(computed);
+	if (computedCount > 0) {
+		return computedCount;
+	}
+	return htmlLayoutTrackChildren(container).length;
+}
+
+function htmlLayoutTrackSizesPx(container: HTMLElement, axis: 'column' | 'row'): number[] {
+	const trackCount = htmlLayoutTrackCount(container, axis);
+	const children = htmlLayoutSortedChildren(container, axis);
+	const sizes: number[] = [];
+	for (let index = 0; index < trackCount; index++) {
+		const child = children[index];
+		if (!child) {
+			sizes.push(0);
+			continue;
+		}
+		sizes.push(axis === 'column' ? child.offsetWidth : child.offsetHeight);
+	}
+	return sizes;
+}
+
+function htmlLayoutGridGap(container: HTMLElement, axis: 'column' | 'row'): number {
+	const style = getComputedStyle(container);
+	if (axis === 'column') {
+		const columnGap = parseFloat(style.columnGap);
+		if (!Number.isNaN(columnGap)) {
+			return columnGap;
+		}
+	} else {
+		const rowGap = parseFloat(style.rowGap);
+		if (!Number.isNaN(rowGap)) {
+			return rowGap;
+		}
+	}
+	const gap = parseFloat(style.gap);
+	return Number.isNaN(gap) ? 0 : gap;
+}
+
+function htmlLayoutGridContentSize(container: HTMLElement, axis: 'column' | 'row'): number {
+	const style = getComputedStyle(container);
+	if (axis === 'column') {
+		const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+		return container.clientWidth - padding;
+	}
+	const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+	return container.clientHeight - padding;
+}
+
+function htmlLayoutTrackTotalPx(container: HTMLElement, axis: 'column' | 'row'): number {
+	const count = htmlLayoutTrackCount(container, axis);
+	if (count === 0) {
+		return 0;
+	}
+	const gap = htmlLayoutGridGap(container, axis);
+	return htmlLayoutGridContentSize(container, axis) - gap * (count - 1);
+}
+
+function htmlLayoutNormalizedTrackSizes(container: HTMLElement, axis: 'column' | 'row'): number[] {
+	const sizes = htmlLayoutTrackSizesPx(container, axis);
+	if (sizes.length === 0) {
+		return sizes;
+	}
+	const total = htmlLayoutTrackTotalPx(container, axis);
+	const sum = sizes.reduce((acc, size) => acc + size, 0);
+	const drift = total - sum;
+	if (Math.abs(drift) > 0.5) {
+		sizes[sizes.length - 1] = (sizes[sizes.length - 1] ?? 0) + drift;
+	}
+	return sizes;
+}
+
+function htmlLayoutAnchorFarTrack(sizes: number[], total: number, mins: readonly number[]): void {
+	if (sizes.length === 0) {
+		return;
+	}
+	const lastIndex = sizes.length - 1;
+	sizes[lastIndex] = total - sizes.slice(0, lastIndex).reduce((sum, size) => sum + size, 0);
+	const lastMin = mins[lastIndex] ?? 0;
+	if ((sizes[lastIndex] ?? 0) < lastMin && lastIndex > 0) {
+		sizes[lastIndex] = lastMin;
+		sizes[lastIndex - 1] = total - lastMin - sizes.slice(0, lastIndex - 1).reduce((sum, size) => sum + size, 0);
+	}
+}
+
+function htmlLayoutTrackMinsPx(container: HTMLElement, axis: 'column' | 'row'): number[] {
+	const trackCount = htmlLayoutTrackCount(container, axis);
+	const attr = axis === 'column' ? container.getAttribute('data-min-c') : container.getAttribute('data-min-r');
+	const domChildren = htmlLayoutTrackChildren(container);
+	const sortedChildren = htmlLayoutSortedChildren(container, axis);
+	const attrMins = attr ? attr.split(/\s+/).map(part => parseFloat(part) || 0) : [];
+	while (attrMins.length < trackCount) {
+		attrMins.push(0);
+	}
+	const mins: number[] = [];
+	for (let index = 0; index < trackCount; index++) {
+		const child = sortedChildren[index];
+		if (!child) {
+			mins.push(attrMins[index] ?? 0);
+			continue;
+		}
+		const domIndex = domChildren.indexOf(child);
+		mins.push(domIndex >= 0 ? (attrMins[domIndex] ?? attrMins[index] ?? 0) : (attrMins[index] ?? 0));
+	}
+	return mins;
+}
+
+function htmlLayoutGapHitSlopPx(): number {
+	return 6 / htmlLayoutDeckCanvasScale();
+}
+
+function htmlLayoutGapHitMinPx(): number {
+	return 8 / htmlLayoutDeckCanvasScale();
+}
+
+function htmlLayoutAreTracksAdjacent(axis: 'column' | 'row', beforeRect: DOMRect, afterRect: DOMRect): boolean {
+	const maxGapPx = 200;
+	if (axis === 'column') {
+		const gap = afterRect.left - beforeRect.right;
+		if (gap < -2 || gap > maxGapPx) {
+			return false;
+		}
+		const overlapY = Math.min(beforeRect.bottom, afterRect.bottom) - Math.max(beforeRect.top, afterRect.top);
+		return overlapY > 0;
+	}
+	const gap = afterRect.top - beforeRect.bottom;
+	if (gap < -2 || gap > maxGapPx) {
+		return false;
+	}
+	const overlapX = Math.min(beforeRect.right, afterRect.right) - Math.max(beforeRect.left, afterRect.left);
+	return overlapX > 0;
+}
+
+function htmlLayoutPointerGapDistance(clientX: number, clientY: number, axis: 'column' | 'row', beforeRect: DOMRect, afterRect: DOMRect, slop: number): number {
+	const minHit = htmlLayoutGapHitMinPx();
+	if (axis === 'column') {
+		const gapLeft = beforeRect.right;
+		const gapRight = afterRect.left;
+		const top = Math.min(beforeRect.top, afterRect.top) - slop;
+		const bottom = Math.max(beforeRect.bottom, afterRect.bottom) + slop;
+		if (clientY < top || clientY > bottom) {
+			return Infinity;
+		}
+		const gapWidth = gapRight - gapLeft;
+		let left: number;
+		let right: number;
+		if (gapWidth >= minHit) {
+			left = gapLeft;
+			right = gapRight;
+		} else {
+			const centerX = (gapLeft + gapRight) / 2;
+			left = centerX - minHit / 2;
+			right = centerX + minHit / 2;
+		}
+		left -= slop;
+		right += slop;
+		if (clientX < left) {
+			return left - clientX;
+		}
+		if (clientX > right) {
+			return clientX - right;
+		}
+		return 0;
+	}
+	const gapTop = beforeRect.bottom;
+	const gapBottom = afterRect.top;
+	const left = Math.min(beforeRect.left, afterRect.left) - slop;
+	const right = Math.max(beforeRect.right, afterRect.right) + slop;
+	if (clientX < left || clientX > right) {
+		return Infinity;
+	}
+	const gapHeight = gapBottom - gapTop;
+	let top: number;
+	let bottom: number;
+	if (gapHeight >= minHit) {
+		top = gapTop;
+		bottom = gapBottom;
+	} else {
+		const centerY = (gapTop + gapBottom) / 2;
+		top = centerY - minHit / 2;
+		bottom = centerY + minHit / 2;
+	}
+	top -= slop;
+	bottom += slop;
+	if (clientY < top) {
+		return top - clientY;
+	}
+	if (clientY > bottom) {
+		return clientY - bottom;
+	}
+	return 0;
+}
+
+function htmlLayoutHitTestGap(clientX: number, clientY: number): IHtmlLayoutGapHit | null {
+	const slop = htmlLayoutGapHitSlopPx();
+	let bestDistanceSq = Infinity;
+	let bestHit: IHtmlLayoutGapHit | null = null;
+
+	for (let node = htmlLayoutElementFromPoint(clientX, clientY); node; node = node.parentElement) {
+		if (!htmlLayoutIsGridContainer(node)) {
+			continue;
+		}
+		for (const axis of ['column', 'row'] as const) {
+			if (htmlLayoutTrackCount(node, axis) < 2) {
+				continue;
+			}
+			const sorted = htmlLayoutSortedChildren(node, axis);
+			const pairCount = Math.min(sorted.length, htmlLayoutTrackCount(node, axis)) - 1;
+			for (let index = 0; index < pairCount; index++) {
+				const before = sorted[index];
+				const after = sorted[index + 1];
+				if (!before || !after) {
+					continue;
+				}
+				const beforeRect = before.getBoundingClientRect();
+				const afterRect = after.getBoundingClientRect();
+				if (!htmlLayoutAreTracksAdjacent(axis, beforeRect, afterRect)) {
+					continue;
+				}
+				const distance = htmlLayoutPointerGapDistance(clientX, clientY, axis, beforeRect, afterRect, slop);
+				if (!Number.isFinite(distance)) {
+					continue;
+				}
+				const distanceSq = distance * distance;
+				if (distanceSq < bestDistanceSq) {
+					bestDistanceSq = distanceSq;
+					bestHit = { container: node, axis, index };
+				}
+			}
+		}
+	}
+	return bestHit;
+}
+
+function htmlLayoutApplyTrackSizes(container: HTMLElement, axis: 'column' | 'row', sizesPx: readonly number[], mins?: readonly number[], totalPx?: number): void {
+	const trackMins = mins ?? htmlLayoutTrackMinsPx(container, axis);
+	const count = Math.min(sizesPx.length, htmlLayoutTrackCount(container, axis));
+	const total = totalPx ?? htmlLayoutTrackTotalPx(container, axis);
+	const rounded: number[] = [];
+	for (let index = 0; index < count - 1; index++) {
+		rounded.push(Math.max(trackMins[index] ?? 0, Math.round(sizesPx[index] ?? 0)));
+	}
+	if (count > 0) {
+		const lastMin = trackMins[count - 1] ?? 0;
+		const othersSum = rounded.reduce((sum, size) => sum + size, 0);
+		rounded.push(Math.max(lastMin, total - othersSum));
+	}
+	const template = rounded.map(size => `${size}px`).join(' ');
+	if (axis === 'column') {
+		container.style.gridTemplateColumns = template;
+		container.setAttribute('data-tpl-c', template);
+	} else {
+		container.style.gridTemplateRows = template;
+		container.setAttribute('data-tpl-r', template);
+	}
+}
+
+function htmlLayoutSnapshotContainer(container: HTMLElement): IHtmlLayoutContainerSnapshot {
+	return {
+		style: container.getAttribute('style') ?? '',
+		tplC: container.getAttribute('data-tpl-c'),
+		tplR: container.getAttribute('data-tpl-r'),
+		minC: container.getAttribute('data-min-c'),
+		minR: container.getAttribute('data-min-r'),
+		childOrder: [...container.children],
+	};
+}
+
+function htmlLayoutRestoreContainer(container: HTMLElement, snapshot: IHtmlLayoutContainerSnapshot): void {
+	if (snapshot.style) {
+		container.setAttribute('style', snapshot.style);
+	} else {
+		container.removeAttribute('style');
+	}
+	for (const [attr, value] of [
+		['data-tpl-c', snapshot.tplC],
+		['data-tpl-r', snapshot.tplR],
+		['data-min-c', snapshot.minC],
+		['data-min-r', snapshot.minR],
+	] as const) {
+		if (value === null) {
+			container.removeAttribute(attr);
+		} else {
+			container.setAttribute(attr, value);
+		}
+	}
+	for (const child of snapshot.childOrder) {
+		container.appendChild(child);
+	}
+}
+
+/** Grid layout editing for DC deck slides — pointer-driven, inline-style only. */
+class HtmlLayoutEditBridge {
+	private _active = false;
+	private _pageStyle: HTMLStyleElement | undefined;
+	private _snapshots = new Map<HTMLElement, IHtmlLayoutContainerSnapshot>();
+	private _drag: IHtmlLayoutDragState | undefined;
+	private _outlineTargets = new Set<HTMLElement>();
+
+	constructor() {
+		window.addEventListener('beforeprint', () => {
+			if (this._active) {
+				this.restoreDefaults();
+				this.setActive(false);
+			}
+		});
+	}
+
+	setActive(active: boolean): void {
+		if (active === this._active) {
+			return;
+		}
+		this._active = active;
+		if (active) {
+			this._captureSnapshots();
+			this._ensurePageStyles();
+			document.documentElement.setAttribute('data-vscode-layout-edit', 'true');
+		} else {
+			this._finishDrag();
+			this._clearOutlines();
+			document.documentElement.removeAttribute('data-vscode-layout-edit');
+			this._pageStyle?.remove();
+			this._pageStyle = undefined;
+			this._snapshots.clear();
+		}
+	}
+
+	restoreDefaults(): void {
+		for (const [container, snapshot] of this._snapshots) {
+			htmlLayoutRestoreContainer(container, snapshot);
+		}
+	}
+
+	handlePointerDown(event: PointerEvent): boolean {
+		if (!this._active || event.button !== 0) {
+			return false;
+		}
+		const gap = htmlLayoutHitTestGap(event.clientX, event.clientY);
+		if (!gap) {
+			return false;
+		}
+		this._drag = {
+			pointerId: event.pointerId,
+			startX: event.clientX,
+			startY: event.clientY,
+			gap,
+			startSizes: htmlLayoutNormalizedTrackSizes(gap.container, gap.axis),
+			startTrackTotalPx: htmlLayoutTrackTotalPx(gap.container, gap.axis),
+		};
+		this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
+		event.preventDefault();
+		return true;
+	}
+
+	handlePointerMove(event: PointerEvent): boolean {
+		if (!this._active) {
+			return false;
+		}
+		if (this._drag) {
+			if (event.pointerId !== this._drag.pointerId) {
+				return true;
+			}
+			this._applyResizeDrag(event);
+			event.preventDefault();
+			return true;
+		}
+		this._updateHoverCursor(event.clientX, event.clientY);
+		return !!this._drag || !!htmlLayoutHitTestGap(event.clientX, event.clientY);
+	}
+
+	handlePointerUp(event: PointerEvent): boolean {
+		if (!this._drag || event.pointerId !== this._drag.pointerId) {
+			return false;
+		}
+		this._finishDrag();
+		this._updateHoverCursor(event.clientX, event.clientY);
+		event.preventDefault();
+		return true;
+	}
+
+	handlePointerCancel(event: PointerEvent): boolean {
+		if (!this._drag || event.pointerId !== this._drag.pointerId) {
+			return false;
+		}
+		this._finishDrag();
+		this._updateHoverCursor(event.clientX, event.clientY);
+		return true;
+	}
+
+	private _applyResizeDrag(event: PointerEvent): void {
+		const drag = this._drag;
+		if (!drag) {
+			return;
+		}
+		const { container, axis } = drag.gap;
+		const scale = htmlLayoutDeckCanvasScale();
+		const delta = (axis === 'column' ? event.clientX - drag.startX : event.clientY - drag.startY) / scale;
+		const sortedIndex = drag.gap.index;
+		const sizes = [...drag.startSizes];
+		const mins = htmlLayoutTrackMinsPx(container, axis);
+		const total = drag.startTrackTotalPx ?? htmlLayoutTrackTotalPx(container, axis);
+		if (sortedIndex < 0 || sortedIndex >= sizes.length - 1) {
+			return;
+		}
+
+		sizes[sortedIndex] = (sizes[sortedIndex] ?? 0) + delta;
+		sizes[sortedIndex + 1] = (sizes[sortedIndex + 1] ?? 0) - delta;
+
+		for (let pass = 0; pass < 2; pass++) {
+			for (let index = 0; index < sizes.length; index++) {
+				const min = mins[index] ?? 0;
+				if ((sizes[index] ?? 0) >= min) {
+					continue;
+				}
+				const overflow = min - (sizes[index] ?? 0);
+				sizes[index] = min;
+				const neighbor = index < sizes.length - 1 ? index + 1 : index - 1;
+				if (neighbor >= 0) {
+					sizes[neighbor] = (sizes[neighbor] ?? 0) - overflow;
+				}
+			}
+		}
+
+		htmlLayoutAnchorFarTrack(sizes, total, mins);
+
+		htmlLayoutApplyTrackSizes(container, axis, sizes, mins, total);
+		const children = htmlLayoutSortedChildren(container, axis);
+		this._setOutline(children[sortedIndex], HTML_LAYOUT_EDIT_OUTLINE_BLUE);
+		this._setOutline(children[sortedIndex + 1], HTML_LAYOUT_EDIT_OUTLINE_ORANGE);
+	}
+
+	private _finishDrag(): void {
+		this._drag = undefined;
+		this._clearOutlines();
+		this._clearCursorVisuals();
+	}
+
+	private _updateHoverCursor(clientX: number, clientY: number): void {
+		if (this._drag) {
+			return;
+		}
+		const gap = htmlLayoutHitTestGap(clientX, clientY);
+		if (gap) {
+			this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
+			return;
+		}
+		this._clearCursorVisuals();
+	}
+
+	private _setForcedCursor(cursor: 'col-resize' | 'row-resize' | undefined): void {
+		this._clearCursorVisuals();
+		if (!cursor) {
+			return;
+		}
+		document.documentElement.style.cursor = cursor;
+	}
+
+	private _clearCursorVisuals(): void {
+		document.documentElement.style.removeProperty('cursor');
+	}
+
+	private _setOutline(element: HTMLElement | undefined, color: string | undefined): void {
+		if (!element) {
+			return;
+		}
+		if (color) {
+			element.style.outline = `2px solid ${color}`;
+			element.style.outlineOffset = '-2px';
+			this._outlineTargets.add(element);
+		}
+	}
+
+	private _clearOutlines(): void {
+		for (const element of this._outlineTargets) {
+			element.style.removeProperty('outline');
+			element.style.removeProperty('outline-offset');
+		}
+		this._outlineTargets.clear();
+	}
+
+	private _captureSnapshots(): void {
+		this._snapshots.clear();
+		const root = htmlLayoutActiveSlideRoot();
+		for (const container of root.querySelectorAll('[data-dc-grid]')) {
+			if (container instanceof HTMLElement) {
+				this._captureContainer(container);
+			}
+		}
+	}
+
+	private _captureContainer(container: HTMLElement): void {
+		this._snapshots.set(container, htmlLayoutSnapshotContainer(container));
+	}
+
+	private _ensurePageStyles(): void {
+		if (this._pageStyle) {
+			return;
+		}
+		const style = document.createElement('style');
+		style.id = 'vscode-html-layout-edit-styles';
+		style.textContent = `
+			html[data-vscode-layout-edit], html[data-vscode-layout-edit] * {
+				user-select: none !important;
+				-webkit-user-select: none !important;
+			}
+			html[data-vscode-layout-edit] main[data-dc-grid] {
+				background-image: repeating-linear-gradient(
+					45deg,
+					color-mix(in srgb, #0078d4 10%, transparent) 0 8px,
+					transparent 8px 16px
+				) !important;
+			}
+			html[data-vscode-layout-edit] [data-dc-grid] > * {
+				outline: 1px dashed color-mix(in srgb, #0078d4 55%, transparent) !important;
+				outline-offset: -1px;
+			}
+		`;
+		document.head.appendChild(style);
+		this._pageStyle = style;
+	}
+}
+
 /**
  * Element-pick controller used by the "Add Element to Chat" flow.
  *
@@ -1045,6 +1693,8 @@ class ElementPicker {
 	private _continuous = false;
 	private _commentMode = false;
 	private _editMode = false;
+	private _layoutEditMode = false;
+	private _layoutPointerListenersAttached = false;
 
 	// DOM — created once in the constructor, reused across start/stop cycles.
 	private readonly _shadowHost: HTMLDivElement;
@@ -1096,6 +1746,7 @@ class ElementPicker {
 		private readonly _onCommentRemoved: (elementId: string) => void,
 		private readonly _onStopped: () => void,
 		private readonly _htmlEdit?: HtmlEditBridge,
+		private readonly _htmlLayoutEdit?: HtmlLayoutEditBridge,
 	) {
 		// Build the shadow DOM tree once. The host is appended/removed from the
 		// document on start/stop so the overlay only captures events when active.
@@ -1316,6 +1967,7 @@ class ElementPicker {
 		document.addEventListener('pointerleave', this._onPointerLeave, true);
 		window.addEventListener('pointerdown', this._onPointerDown, true);
 		window.addEventListener('pointerup', this._onPointerUp, true);
+		window.addEventListener('pointercancel', this._onPointerCancel, true);
 		window.addEventListener('click', this._onClick, true);
 		window.addEventListener('contextmenu', this._onClick, true);
 		window.addEventListener('focusin', this._onFocusIn, true);
@@ -1328,6 +1980,7 @@ class ElementPicker {
 			this._updateHighlight(this._focusedTarget);
 		}
 
+		this._syncLayoutPointerListeners();
 		return true;
 	}
 
@@ -1363,6 +2016,7 @@ class ElementPicker {
 		document.removeEventListener('pointerleave', this._onPointerLeave, true);
 		window.removeEventListener('pointerdown', this._onPointerDown, true);
 		window.removeEventListener('pointerup', this._onPointerUp, true);
+		window.removeEventListener('pointercancel', this._onPointerCancel, true);
 		window.removeEventListener('click', this._onClick, true);
 		window.removeEventListener('contextmenu', this._onClick, true);
 		window.removeEventListener('focusin', this._onFocusIn, true);
@@ -1383,7 +2037,52 @@ class ElementPicker {
 
 		this._onStopped();
 		this._unmountWhenIdle();
+		this._syncLayoutPointerListeners();
 	}
+
+	private _syncLayoutPointerListeners(): void {
+		const shouldAttach = this._layoutEditMode && !this._selectionActive;
+		if (shouldAttach === this._layoutPointerListenersAttached) {
+			return;
+		}
+		if (shouldAttach) {
+			window.addEventListener('pointermove', this._onLayoutPointerMove, true);
+			window.addEventListener('pointerdown', this._onLayoutPointerDown, true);
+			window.addEventListener('pointerup', this._onLayoutPointerUp, true);
+			window.addEventListener('pointercancel', this._onLayoutPointerCancel, true);
+			this._layoutPointerListenersAttached = true;
+		} else {
+			window.removeEventListener('pointermove', this._onLayoutPointerMove, true);
+			window.removeEventListener('pointerdown', this._onLayoutPointerDown, true);
+			window.removeEventListener('pointerup', this._onLayoutPointerUp, true);
+			window.removeEventListener('pointercancel', this._onLayoutPointerCancel, true);
+			this._layoutPointerListenersAttached = false;
+		}
+	}
+
+	private _onLayoutPointerMove = (e: PointerEvent): void => {
+		if (this._layoutEditMode) {
+			this._htmlLayoutEdit?.handlePointerMove(e);
+		}
+	};
+
+	private _onLayoutPointerDown = (e: PointerEvent): void => {
+		if (this._layoutEditMode) {
+			this._htmlLayoutEdit?.handlePointerDown(e);
+		}
+	};
+
+	private _onLayoutPointerUp = (e: PointerEvent): void => {
+		if (this._layoutEditMode) {
+			this._htmlLayoutEdit?.handlePointerUp(e);
+		}
+	};
+
+	private _onLayoutPointerCancel = (e: PointerEvent): void => {
+		if (this._layoutEditMode) {
+			this._htmlLayoutEdit?.handlePointerCancel(e);
+		}
+	};
 
 	/**
 	 * Update the theme colors applied to the overlay.
@@ -1420,6 +2119,12 @@ class ElementPicker {
 
 	setElementHighlight(target: Element | undefined): void {
 		this._updateHighlight(target);
+	}
+
+	setHtmlLayoutMode(active: boolean): void {
+		this._layoutEditMode = active;
+		this._htmlLayoutEdit?.setActive(active);
+		this._syncLayoutPointerListeners();
 	}
 
 	/**
@@ -1495,6 +2200,9 @@ class ElementPicker {
 		if (!this._selectionActive) {
 			return;
 		}
+		if (this._layoutEditMode && this._htmlLayoutEdit?.handlePointerMove(e)) {
+			return;
+		}
 		const isOverPicker = e.composedPath().includes(this._shadowHost);
 		if (this._commentTarget) {
 			if (!isOverPicker) {
@@ -1565,6 +2273,9 @@ class ElementPicker {
 		if (e.composedPath().includes(this._shadowHost)) {
 			return;
 		}
+		if (this._layoutEditMode && this._htmlLayoutEdit?.handlePointerDown(e)) {
+			return;
+		}
 		if (this._editMode && this._htmlEdit?.isEditInteractionTarget(this._pickElementAt(e.clientX, e.clientY))) {
 			return;
 		}
@@ -1588,8 +2299,20 @@ class ElementPicker {
 		e.stopPropagation();
 	};
 
+	private _onPointerCancel = (e: PointerEvent): void => {
+		if (!this._selectionActive) {
+			return;
+		}
+		if (this._layoutEditMode && this._htmlLayoutEdit?.handlePointerCancel(e)) {
+			return;
+		}
+	};
+
 	private _onPointerUp = (e: PointerEvent): void => {
 		if (!this._selectionActive) {
+			return;
+		}
+		if (this._layoutEditMode && this._htmlLayoutEdit?.handlePointerUp(e)) {
 			return;
 		}
 		if (this._dismissedCommentOnPointerDown) {

@@ -54,9 +54,9 @@
 	.browser-actions-toolbar {
 		margin-right: 4px;
 
-		/* Edit Page and Export PDF are the two authoring entry points, tinted with */
-		/* the accent the editor picker uses for its active option border. */
+		/* Edit Page, Layout mode, and Export PDF share the authoring accent. */
 		.action-item > .action-label.codicon-edit,
+		.action-item > .action-label.codicon-table,
 		.action-item > .action-label.codicon-file-pdf {
 			color: #ff9b50;
 		}
@@ -393,6 +393,7 @@
 
 	.browser-html-edit-selector {
 		margin: 8px 12px 8px;
+		flex-shrink: 0;
 		padding: 6px 8px;
 		border-radius: var(--vscode-cornerRadius-small);
 		background-color: var(--vscode-input-background);
@@ -400,7 +401,6 @@
 		font-family: var(--monaco-monospace-font);
 		font-size: 12px;
 		word-break: break-all;
-		flex-shrink: 0;
 	}
 
 	.browser-html-edit-scroll {
@@ -963,6 +963,11 @@
 
 		.monaco-button {
 			flex: 0 0 auto;
+			cursor: pointer;
+		}
+
+		.monaco-button.disabled {
+			cursor: default;
 		}
 	}
 

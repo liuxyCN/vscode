@@ -9,18 +9,9 @@ import { BrowserElementSelectionMode, IBrowserElementCommentsUpdate, IBrowserEle
 import { ICDPConnection } from '../common/cdp/types.js';
 import type { BrowserView } from './browserView.js';
 import { BrowserViewFrameInspector } from './browserViewFrameInspector.js';
-import { localize } from '../../../nls.js';
+import { createBrowserViewPreloadLocalizedStrings } from '../common/browserViewPreloadI18n.js';
 
-const localizedStrings: IBrowserViewPreloadLocalizedStrings = {
-	addComment: localize('browserView.addComment', "Add Comment"),
-	addCommentPlaceholder: localize('browserView.addCommentPlaceholder', "Add a comment"),
-	commentOnSelectedElement: localize('browserView.commentOnSelectedElement', "Comment on selected element"),
-	elementComment: localize('browserView.elementComment', "Element comment {0}"),
-	elementCommentWithBody: localize('browserView.elementCommentWithBody', "Element comment {0}: {1}"),
-	emptyElementComment: localize('browserView.emptyElementComment', "Empty element comment {0}"),
-	removeComment: localize('browserView.removeComment', "Remove Comment"),
-	removeElementComment: localize('browserView.removeElementComment', "Remove element comment"),
-};
+const localizedStrings: IBrowserViewPreloadLocalizedStrings = createBrowserViewPreloadLocalizedStrings();
 
 interface IActiveSelection extends IDisposable {
 	options: IBrowserElementSelectionOptions;
@@ -120,12 +111,21 @@ export class BrowserViewInspector extends Disposable {
 		this._register(this._registry.onDidAdopt(inspector => this._onInspectorAdopted(inspector)));
 
 		// Navigation destroys preload overlays and CDP state
-		const onNavigated = () => {
+		const resetPageInteractionModes = () => {
 			this._activeSelection.clear();
 			this._activeAreaSelection.clear();
+			this._finishEditMode();
+			this.setHtmlLayoutMode(false);
 		};
-		webContents.on('did-navigate', onNavigated);
-		this._register({ dispose: () => webContents.removeListener('did-navigate', onNavigated) });
+		webContents.on('did-navigate', resetPageInteractionModes);
+		this._register({ dispose: () => webContents.removeListener('did-navigate', resetPageInteractionModes) });
+		const onStartLoading = () => {
+			if (webContents.isLoadingMainFrame()) {
+				resetPageInteractionModes();
+			}
+		};
+		webContents.on('did-start-loading', onStartLoading);
+		this._register({ dispose: () => webContents.removeListener('did-start-loading', onStartLoading) });
 
 		// Preload ready — the key correlation point between WebFrameMain and CDP target
 		const onIpcMessage = (_event: Electron.Event, channel: string, ...args: unknown[]) => {
@@ -469,6 +469,7 @@ export class BrowserViewInspector extends Disposable {
 			return;
 		}
 
+		this.setHtmlLayoutMode(false);
 		this._activeSelection.clear();
 		this._activeAreaSelection.clear();
 
@@ -509,6 +510,12 @@ export class BrowserViewInspector extends Disposable {
 	finishHtmlEditTextSession(commit: boolean): void {
 		for (const inspector of this._registry.inspectors) {
 			inspector.finishHtmlEditTextSession(commit);
+		}
+	}
+
+	setHtmlLayoutMode(active: boolean): void {
+		for (const inspector of this._registry.inspectors) {
+			inspector.setHtmlLayoutMode(active);
 		}
 	}
 

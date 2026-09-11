@@ -8,7 +8,9 @@ import { ILocalizedString, miniActionTitle, miniLabel, MiniI18nTable } from '../
 const browserViewLabels: MiniI18nTable<
 	| 'editPage'
 	| 'stopEditMode'
+	| 'stopHtmlLayoutMode'
 	| 'editModeActive'
+	| 'htmlLayoutModeActive'
 	| 'htmlEditAvailable'
 	| 'htmlEditSaveSource'
 	| 'newTab'
@@ -89,6 +91,7 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditBorderStyleDotted'
 	| 'htmlEditLayoutRow'
 	| 'htmlEditLayoutColumn'
+	| 'htmlEditLayoutMode'
 	| 'htmlEditAlignStart'
 	| 'htmlEditAlignCenter'
 	| 'htmlEditAlignEnd'
@@ -130,7 +133,9 @@ const browserViewLabels: MiniI18nTable<
 > = {
 	editPage: { en: 'Edit Page', 'zh-cn': '\u7F16\u8F91\u9875\u9762', 'zh-Hans': '\u7F16\u8F91\u9875\u9762' },
 	stopEditMode: { en: 'Stop Edit Mode', 'zh-cn': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u7F16\u8F91\u6A21\u5F0F' },
+	stopHtmlLayoutMode: { en: 'Stop Layout Mode', 'zh-cn': '\u505C\u6B62\u5E03\u5C40\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u5E03\u5C40\u6A21\u5F0F' },
 	editModeActive: { en: 'Whether in-page edit mode is active', 'zh-cn': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001', 'zh-Hans': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001' },
+	htmlLayoutModeActive: { en: 'Whether in-page grid layout mode is active', 'zh-cn': '\u9875\u5185\u5E03\u5C40\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001', 'zh-Hans': '\u9875\u5185\u5E03\u5C40\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001' },
 	htmlEditAvailable: { en: 'Whether HTML visual edit mode is available for the current browser tab', 'zh-cn': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F' },
 	htmlEditSaveSource: { en: 'Browser HTML Edit', 'zh-cn': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91', 'zh-Hans': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91' },
 	newTab: { en: 'New Tab', 'zh-cn': '\u65B0\u5EFA\u6807\u7B7E\u9875', 'zh-Hans': '\u65B0\u5EFA\u6807\u7B7E\u9875' },
@@ -211,6 +216,7 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditBorderStyleDotted: { en: 'Dotted', 'zh-cn': '\u70B9\u7EBF', 'zh-Hans': '\u70B9\u7EBF' },
 	htmlEditLayoutRow: { en: 'Horizontal', 'zh-cn': '\u6C34\u5E73', 'zh-Hans': '\u6C34\u5E73' },
 	htmlEditLayoutColumn: { en: 'Vertical', 'zh-cn': '\u5782\u76F4', 'zh-Hans': '\u5782\u76F4' },
+	htmlEditLayoutMode: { en: 'Layout mode', 'zh-cn': '\u5E03\u5C40\u6A21\u5F0F', 'zh-Hans': '\u5E03\u5C40\u6A21\u5F0F' },
 	htmlEditAlignStart: { en: 'Start', 'zh-cn': 'start', 'zh-Hans': 'start' },
 	htmlEditAlignCenter: { en: 'Center', 'zh-cn': 'center', 'zh-Hans': 'center' },
 	htmlEditAlignEnd: { en: 'End', 'zh-cn': 'end', 'zh-Hans': 'end' },

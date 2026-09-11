@@ -377,6 +377,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.toggleEditMode(enabled);
 	}
 
+	async setHtmlLayoutMode(id: string, active: boolean): Promise<void> {
+		return this._getBrowserView(id).inspector.setHtmlLayoutMode(active);
+	}
+
 	async applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void> {
 		return this._getBrowserView(id).inspector.applyHtmlEditPreview(preview);
 	}

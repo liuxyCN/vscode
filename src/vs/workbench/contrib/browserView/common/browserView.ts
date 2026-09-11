@@ -445,6 +445,7 @@ export interface IBrowserViewModel extends IDisposable {
 	setElementComments(update: IBrowserElementCommentsUpdate): Promise<void>;
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
+	setHtmlLayoutMode(active: boolean): Promise<void>;
 	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void>;
 	reselectElementByDomPath(domPath: string): Promise<void>;
 	getDcAnnotatedTemplate(componentName: string): Promise<string | null>;
@@ -910,6 +911,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	async toggleEditMode(enabled?: boolean): Promise<void> {
 		return this.browserViewService.toggleEditMode(this.id, enabled);
+	}
+
+	async setHtmlLayoutMode(active: boolean): Promise<void> {
+		return this.browserViewService.setHtmlLayoutMode(this.id, active);
 	}
 
 	async applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void> {

@@ -293,6 +293,13 @@ export class BrowserViewFrameInspector extends Disposable {
 		this.frame.postMessage('vscode:browserView:reselectByDomPath', domPath);
 	}
 
+	setHtmlLayoutMode(active: boolean): void {
+		if (this.frame.isDestroyed()) {
+			return;
+		}
+		this.frame.postMessage('vscode:browserView:setHtmlLayoutMode', { active });
+	}
+
 	/**
 	 * Start element inspection on this frame.
 	 * Uses CDP inspect mode if paused, otherwise the preload picker.

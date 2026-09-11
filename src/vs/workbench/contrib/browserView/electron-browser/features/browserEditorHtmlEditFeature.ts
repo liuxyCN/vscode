@@ -165,9 +165,6 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	private _associatedResource: URI | undefined;
 	private _wrapper: HTMLElement | undefined;
 	private _saveStatusHideHandle: IDisposable | undefined;
-	private _pendingEditModeRestore = false;
-	private _pendingEditModeRestoreClear: IDisposable | undefined;
-	private _preserveHistoryOnEditModeEnter = false;
 	private _draft = emptyBrowserHtmlEditDraft();
 	private _baselineDraft = emptyBrowserHtmlEditDraft();
 	private _lastPreviewStyles: Partial<Record<BrowserHtmlEditStyleKey, string>> = {};
@@ -177,6 +174,9 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	private _populateDraftGeneration = 0;
 	private _populateDraftPromise: Promise<void> = Promise.resolve();
 	private _saveInFlight = false;
+	private _pendingEditModeRestore = false;
+	private _pendingEditModeRestoreClear: IDisposable | undefined;
+	private _preserveHistoryOnEditModeEnter = false;
 	private _pendingHistoryResyncDomPath: string | undefined;
 	private readonly _previewScheduler: RunOnceScheduler;
 
@@ -198,9 +198,8 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		this._panel = $('.browser-html-edit-panel');
 		this._panel.style.display = 'none';
 
-		this._selector = $('.browser-html-edit-selector');
+		this._selector = this._panel.appendChild($('.browser-html-edit-selector'));
 		this._selector.textContent = browserViewLabel('htmlEditNoSelection', 'No element selected');
-		this._panel.appendChild(this._selector);
 
 		this._scroll = $('.browser-html-edit-scroll');
 		this._contentSection = this._scroll.appendChild($('.browser-html-edit-tab-panel'));
@@ -1087,6 +1086,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 				void model.toggleEditMode(true);
 			}
 		}));
+
 	}
 
 	override onModelDetached(): void {
@@ -1423,11 +1423,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		}
 		this._historyIndex--;
 		this._syncHistoryButtons();
-		this._pendingHistoryResyncDomPath = this._selected?.domPath;
-		this._previewScheduler.cancel();
-		this._lastPreviewStyles = {};
-		await this._writeSource(this._history[this._historyIndex]!, { historyNavigation: true });
-		await this._resyncSelectionAfterHistoryNavigation();
+		await this._applyHistorySource(this._history[this._historyIndex]!);
 	}
 
 	private async _redo(): Promise<void> {
@@ -1436,11 +1432,37 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		}
 		this._historyIndex++;
 		this._syncHistoryButtons();
-		this._pendingHistoryResyncDomPath = this._selected?.domPath;
+		await this._applyHistorySource(this._history[this._historyIndex]!);
+	}
+
+	private async _applyHistorySource(source: string): Promise<void> {
+		const resyncDomPath = this._selected?.domPath;
 		this._previewScheduler.cancel();
 		this._lastPreviewStyles = {};
-		await this._writeSource(this._history[this._historyIndex]!, { historyNavigation: true });
-		await this._resyncSelectionAfterHistoryNavigation();
+		await this._writeSource(source, { reload: false });
+
+		const model = this.editor.model;
+		const resource = this._associatedResource;
+		if (!model || !resource) {
+			return;
+		}
+
+		if (await this._applyDcHotUpdateFromSource(model, source, resource)) {
+			if (resyncDomPath) {
+				await this._resyncSelectionAfterDcHotUpdate(resyncDomPath);
+			}
+			return;
+		}
+
+		// Plain HTML without a DC runtime: fall back to reload while preserving edit mode.
+		this._markPendingEditModeRestore();
+		const reloadSettled = this._waitForReloadSettled(model);
+		await model.reload();
+		await reloadSettled;
+		if (resyncDomPath) {
+			this._pendingHistoryResyncDomPath = resyncDomPath;
+			await this._resyncSelectionAfterHistoryNavigation();
+		}
 	}
 
 	private async _resyncSelectionAfterHistoryNavigation(): Promise<void> {
@@ -1768,6 +1790,27 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		await selectPromise;
 	}
 
+	private async _applyDcHotUpdateFromSource(
+		model: IBrowserViewModel,
+		source: string,
+		resource: URI,
+	): Promise<boolean> {
+		const componentName = dcComponentNameFromResource(resource) ?? await model.getDcRootName() ?? undefined;
+		if (!componentName) {
+			return false;
+		}
+		const dcTemplateHtml = readXDcDecodedTemplate(source, document);
+		if (!dcTemplateHtml) {
+			return false;
+		}
+		await model.updateDcTemplate(componentName, dcTemplateHtml);
+		const props = readDataPropsFromSource(source, document);
+		if (props) {
+			await model.updateDcProps(componentName, props);
+		}
+		return true;
+	}
+
 	private async _applyDcHotUpdateAfterSave(
 		model: IBrowserViewModel,
 		source: string,
@@ -1793,7 +1836,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		}
 	}
 
-	private async _writeSource(source: string, options?: { reload?: boolean; historyNavigation?: boolean }): Promise<void> {
+	private async _writeSource(source: string, options?: { reload?: boolean; preserveEditMode?: boolean }): Promise<void> {
 		const resource = this._associatedResource;
 		if (!resource) {
 			return;
@@ -1823,7 +1866,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 			return;
 		}
 
-		if (this._editModeActive || options?.historyNavigation) {
+		if (this._editModeActive || options?.preserveEditMode) {
 			this._markPendingEditModeRestore();
 		}
 

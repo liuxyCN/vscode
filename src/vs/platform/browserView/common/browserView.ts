@@ -64,6 +64,7 @@ export enum BrowserViewCommandId {
 
 	// Page edit
 	ToggleEditMode = `${commandPrefix}.toggleEditMode`,
+	ToggleHtmlLayoutMode = `${commandPrefix}.toggleHtmlLayoutMode`,
 
 	// Content fullscreen
 	ToggleContentFullscreen = `${commandPrefix}.toggleContentFullscreen`,
@@ -828,6 +829,11 @@ export interface IBrowserViewService {
 	 * @param enabled Whether to enable or disable. Omit to toggle.
 	 */
 	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
+
+	/**
+	 * Toggle in-page grid layout edit mode (gap resize) for DC grid containers.
+	 */
+	setHtmlLayoutMode(id: string, active: boolean): Promise<void>;
 
 	/**
 	 * Apply live HTML edit preview updates to the in-page DOM (styles, text, attributes).
