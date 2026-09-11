@@ -24,6 +24,12 @@ export interface IBrowserCaptureScreenshotCommandArgs {
 	readonly fullPage?: boolean;
 	readonly pageRect?: IBrowserViewRect;
 	readonly awaitNextPaint?: boolean;
+	/**
+	 * Hide deck-stage left thumbnail rail via the `no-rail` attribute (keeps the
+	 * current slide). Defaults to true for viewport/full-page; false when pageRect
+	 * is set. Pass false to include the rail.
+	 */
+	readonly hideDeckRail?: boolean;
 }
 
 /**
@@ -70,6 +76,9 @@ CommandsRegistry.registerCommand({
 			fullPage: args?.fullPage,
 			pageRect: args?.pageRect,
 			awaitNextPaint: args?.awaitNextPaint,
+			// Default on for viewport/full-page so .dc.html screenshots omit the deck rail.
+			// Region captures keep the live layout (coordinates are measured with the rail).
+			hideDeckRail: args?.hideDeckRail ?? !args?.pageRect,
 		};
 
 		const screenshot = await model.captureScreenshot(options);
@@ -102,6 +111,7 @@ CommandsRegistry.registerCommand({
 						required: ['x', 'y', 'width', 'height'],
 					},
 					awaitNextPaint: { type: 'boolean', description: 'Wait for the next compositor frame before capturing.' },
+					hideDeckRail: { type: 'boolean', description: 'For deck-stage (.dc.html) pages, hide the left thumbnail rail via the no-rail attribute (keeps the current slide). Defaults to true for viewport/full-page, false when pageRect is set.' },
 				},
 			},
 		}],

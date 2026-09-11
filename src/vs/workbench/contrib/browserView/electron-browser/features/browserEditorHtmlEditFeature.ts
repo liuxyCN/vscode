@@ -5,7 +5,6 @@
 
 import { $, addDisposableListener, isHTMLInputElement } from '../../../../../base/browser/dom.js';
 import { getFonts } from '../../../../../base/browser/fonts.js';
-import { safeSetInnerHtml } from '../../../../../base/browser/domSanitize.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { ISashEvent, Orientation, Sash } from '../../../../../base/browser/ui/sash/sash.js';
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
@@ -47,6 +46,7 @@ import {
 	IDcPropBinding,
 	inferBrowserHtmlEditKind,
 	inferBrowserHtmlEditKindFromSourceElement,
+	parseOuterHtmlRootElement,
 	parseTextDecorationFlags,
 	readBrowserHtmlEditStyles,
 	readEditableElementText,
@@ -1327,21 +1327,16 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		if (data.attributes?.[DC_PROP_HOLE_ATTR]) {
 			return (data.innerText ?? '').trim();
 		}
-		const tagMatch = data.outerHTML.match(/^<([a-z0-9-]+)/i);
-		if (tagMatch) {
-			const container = document.createElement('div');
-			safeSetInnerHtml(container, data.outerHTML);
-			const root = container.firstElementChild;
-			if (root) {
-				const sourceText = readEditableElementText(root);
-				if (detectDcPropHole(sourceText)) {
-					const rendered = (data.innerText ?? '').trim();
-					if (rendered) {
-						return rendered;
-					}
+		const root = parseOuterHtmlRootElement(data.outerHTML);
+		if (root) {
+			const sourceText = readEditableElementText(root);
+			if (detectDcPropHole(sourceText)) {
+				const rendered = (data.innerText ?? '').trim();
+				if (rendered) {
+					return rendered;
 				}
-				return sourceText;
 			}
+			return sourceText;
 		}
 		return data.innerText ?? '';
 	}

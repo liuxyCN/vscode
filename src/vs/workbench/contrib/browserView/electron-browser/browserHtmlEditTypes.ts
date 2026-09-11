@@ -476,10 +476,41 @@ export function applyEditableElementText(element: Element, text: string): void {
 	}
 }
 
-function parseOuterHtmlRootElement(outerHTML: string): Element | undefined {
+/** Tags that DOMParser may auto-wrap inside `<table>` when parsed in isolation. */
+const TABLE_FRAGMENT_TAGS = new Set(['td', 'th', 'tr', 'col', 'colgroup', 'caption', 'thead', 'tbody', 'tfoot']);
+
+function outerHtmlRootTag(outerHTML: string): string | undefined {
+	return outerHTML.match(/^<\s*([a-z0-9-]+)/i)?.[1]?.toLowerCase();
+}
+
+function findFirstDescendantByTagName(root: Element, tagName: string): Element | undefined {
+	for (const child of root.children) {
+		if (child.tagName.toLowerCase() === tagName) {
+			return child;
+		}
+		const nested = findFirstDescendantByTagName(child, tagName);
+		if (nested) {
+			return nested;
+		}
+	}
+	return undefined;
+}
+
+export function parseOuterHtmlRootElement(outerHTML: string): Element | undefined {
 	try {
 		const doc = new DOMParser().parseFromString(outerHTML, 'text/html');
-		return doc.body.firstElementChild ?? undefined;
+		const expectedTag = outerHtmlRootTag(outerHTML);
+		const direct = doc.body.firstElementChild;
+		if (!expectedTag) {
+			return direct ?? undefined;
+		}
+		if (direct && direct.tagName.toLowerCase() === expectedTag) {
+			return direct;
+		}
+		if (TABLE_FRAGMENT_TAGS.has(expectedTag)) {
+			return findFirstDescendantByTagName(doc.body, expectedTag);
+		}
+		return direct ?? undefined;
 	} catch {
 		return undefined;
 	}

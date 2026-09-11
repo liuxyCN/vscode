@@ -46,6 +46,7 @@ const result = await vscode.commands.executeCommand<{
 | `fullPage` | `boolean` | `false` | 是否截取整页（含滚动区域）。与 `pageRect` 互斥 |
 | `pageRect` | `object` | — | 区域截图，页面坐标系 `{ x, y, width, height }` |
 | `awaitNextPaint` | `boolean` | `false` | 等待下一帧合成后再截图（用于刚关闭 overlay 的场景） |
+| `hideDeckRail` | `boolean` | 视口/整页为 `true`；有 `pageRect` 时为 `false` | 对含 `deck-stage` 的 `.dc.html`，临时加 `no-rail` 隐藏左侧缩略图栏，**保持当前幻灯片**。不用 print media（否则会铺成多页，视口总是第一页） |
 
 #### 返回值
 
@@ -164,6 +165,7 @@ Add to Chat 需要 Chat 功能已启用（`chatIsEnabled`），且截图会出�
 
 - **源码位置**：`src/vs/workbench/contrib/browserView/electron-browser/features/browserCaptureScreenshotFeature.ts`
 - **底层 API**：`IBrowserViewModel.captureScreenshot()` → Electron `webContents.capturePage()`；整页截图走 CDP `Page.captureScreenshot`
+- **deck-stage**：命令默认 `hideDeckRail: true`，临时设置 `no-rail` 隐藏左侧缩略图栏并保持当前页。不用 `@media print`（打印布局会把每页幻灯片铺开，视口截图总是第一页）。占位截图等内部高频调用不传该选项
 - **类型定义**：
   - 命令参数：`IBrowserCaptureScreenshotCommandArgs`
   - 命令返回值：`IBrowserCaptureScreenshotCommandResult`
@@ -177,3 +179,4 @@ Add to Chat 需要 Chat 功能已启用（`chatIsEnabled`），且截图会出�
 2. **`pageId` 获取**：默认使用当前活动的浏览器标签页。若需指定其他标签，需已知其内部 page ID（通常由 Agent 工具 `open_browser` / `list_browser_pages` 返回，或通过 [`browserTabExtensionApi.md`](./browserTabExtensionApi.md) 中的 `vscode.browser.getOpenTabs()` 获取）。
 3. **后台标签页**：底层实现会短暂激活渲染管线以支持后台标签截图，一般对用户无感知。
 4. **整页截图尺寸**：整页截图最大边长受内部限制（约 2576px），超长页面会被缩放。
+5. **`.dc.html` / deck-stage**：命令默认开启 `hideDeckRail`，用 `no-rail` 隐藏左侧栏并保持当前幻灯片；截完移除属性恢复。导出 PDF 仍走 `beforeprint` + `printToPDF`（需要一页一幻灯片）。底层 `captureScreenshot` 默认关闭该选项，以免占位截图闪烁。

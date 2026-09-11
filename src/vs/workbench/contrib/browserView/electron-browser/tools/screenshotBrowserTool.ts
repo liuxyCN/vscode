@@ -185,7 +185,7 @@ export class ScreenshotBrowserTool implements IToolImpl {
 			}
 			return locator.boundingBox();
 		}, selector, params.scrollIntoViewIfNeeded) || undefined;
-		const screenshot = await browserViewModel.captureScreenshot({ pageRect: bounds });
+		const screenshot = await browserViewModel.captureScreenshot({ pageRect: bounds, hideDeckRail: !bounds });
 
 		const dimensions = readImageDimensions(screenshot);
 		const hostWindow = this.findBrowserViewHostWindow(browserViewModel);

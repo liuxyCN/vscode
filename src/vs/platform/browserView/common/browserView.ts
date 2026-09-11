@@ -258,6 +258,18 @@ export interface IBrowserViewCaptureScreenshotOptions {
 	 * for captures that don't follow a DOM teardown.
 	 */
 	awaitNextPaint?: boolean;
+	/**
+	 * When true, temporarily set `no-rail` on deck-stage (`.dc.html`) so the left
+	 * thumbnail rail is hidden while keeping the **current** slide visible.
+	 *
+	 * Do not use print media for this — `@media print` lays out every slide as its
+	 * own page, so a viewport capture would always show slide 1.
+	 *
+	 * Defaults to false. Leave off for high-frequency internal captures (e.g. the
+	 * placeholder screenshot refreshed every second). User-facing screenshot
+	 * commands should pass true for viewport/full-page captures.
+	 */
+	hideDeckRail?: boolean;
 }
 
 /** Identifies who controls a browser view. */

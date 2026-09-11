@@ -451,7 +451,7 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 			? await model.captureScreenshot({
 				quality: 90,
 				pageRect: bounds,
-				awaitNextPaint: true
+				awaitNextPaint: true,
 			})
 			: undefined;
 
@@ -738,7 +738,7 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 			// user so the image reflects what the user saw when they pressed the button,
 			// not a reflowed version of the page after the panel opens or a later version
 			// after the dialog appears.
-			const screenshotBuffer = await model.captureScreenshot({ quality: 80 });
+			const screenshotBuffer = await model.captureScreenshot({ quality: 80, hideDeckRail: true });
 
 			if (!await this._confirmContentAttachmentRisk(model.url)) {
 				return;
@@ -834,7 +834,7 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 		}
 
 		try {
-			const screenshotBuffer = await model.captureScreenshot({ fullPage: true, format: 'png' });
+			const screenshotBuffer = await model.captureScreenshot({ fullPage: true, format: 'png', hideDeckRail: true });
 
 			if (!await this._confirmContentAttachmentRisk(model.url)) {
 				return;

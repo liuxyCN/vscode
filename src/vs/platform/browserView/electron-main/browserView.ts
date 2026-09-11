@@ -903,7 +903,10 @@ export class BrowserView extends Disposable {
 	}
 
 	/**
-	 * Capture a screenshot of this view
+	 * Capture a screenshot of this view.
+	 * When `options.hideDeckRail` is true, deck-stage (`.dc.html`) pages
+	 * temporarily get the `no-rail` attribute so the thumbnail rail is hidden
+	 * without switching to print layout (which would show slide 1).
 	 */
 	async captureScreenshot(options?: IBrowserViewCaptureScreenshotOptions): Promise<VSBuffer> {
 		if (!this._view.getVisible()) {
@@ -912,6 +915,17 @@ export class BrowserView extends Disposable {
 			this._view.setVisible(false);
 		}
 
+		const capture = () => this._doCaptureScreenshot(options);
+		// Only wrap viewport / full-page captures. Region captures use coordinates from
+		// the live layout (with rail); toggling the rail would shift the page under
+		// the rect and crop the wrong area.
+		if (options?.hideDeckRail && !options.pageRect && !options.screenRect) {
+			return this._withDeckStageRailHidden(capture);
+		}
+		return capture();
+	}
+
+	private async _doCaptureScreenshot(options?: IBrowserViewCaptureScreenshotOptions): Promise<VSBuffer> {
 		const quality = options?.quality ?? 80;
 		const format = options?.format ?? 'jpeg';
 
@@ -978,7 +992,7 @@ export class BrowserView extends Disposable {
 		}
 
 		const webContents = this._view.webContents;
-		const isDeckStage = await webContents.executeJavaScript('!!document.querySelector(\'deck-stage\')', true);
+		const isDeckStage = await this._isDeckStage();
 
 		if (isDeckStage) {
 			await webContents.executeJavaScript(`Promise.race([
@@ -993,12 +1007,66 @@ export class BrowserView extends Disposable {
 				});
 				return VSBuffer.wrap(buffer);
 			} finally {
-				await webContents.executeJavaScript(`window.dispatchEvent(new Event('afterprint'))`, true);
+				try {
+					await webContents.executeJavaScript(`window.dispatchEvent(new Event('afterprint'))`, true);
+				} catch {
+					// Page may have navigated away during export.
+				}
 			}
 		}
 
 		const buffer = await webContents.printToPDF({ printBackground: true });
 		return VSBuffer.wrap(buffer);
+	}
+
+	/**
+	 * For deck-stage (`.dc.html`) pages, temporarily set the `no-rail` attribute so
+	 * the left thumbnail rail is hidden while the current slide stays active.
+	 * Print media must not be used here — it expands every slide into document flow
+	 * (one per page), so viewport captures would always show slide 1.
+	 */
+	private async _withDeckStageRailHidden<T>(fn: () => Promise<T>): Promise<T> {
+		const webContents = this._view.webContents;
+		let addedNoRail = false;
+		try {
+			const state = await webContents.executeJavaScript(`(() => {
+				const deck = document.querySelector('deck-stage');
+				if (!deck) {
+					return { found: false, already: false };
+				}
+				const already = deck.hasAttribute('no-rail');
+				if (!already) {
+					deck.setAttribute('no-rail', '');
+				}
+				return { found: true, already };
+			})()`, true) as { found: boolean; already: boolean } | undefined;
+
+			if (state?.found && !state.already) {
+				addedNoRail = true;
+				// attributeChangedCallback → _fit() expands the stage; wait for paint.
+				await this._waitForNextPaint();
+			}
+			return await fn();
+		} finally {
+			if (addedNoRail) {
+				try {
+					await webContents.executeJavaScript(
+						`document.querySelector('deck-stage')?.removeAttribute('no-rail')`,
+						true
+					);
+				} catch {
+					// Page may have navigated away during capture.
+				}
+			}
+		}
+	}
+
+	private async _isDeckStage(): Promise<boolean> {
+		try {
+			return !!(await this._view.webContents.executeJavaScript(`!!document.querySelector('deck-stage')`, true));
+		} catch {
+			return false;
+		}
 	}
 
 	// Capture a screenshot of the full scrollable document (beyond the viewport) via CDP.
