@@ -1029,8 +1029,33 @@ const HTML_LAYOUT_EDIT_OUTLINE_ORANGE = '#ca5010';
 interface IHtmlLayoutGapHit {
 	readonly container: HTMLElement;
 	readonly axis: 'column' | 'row';
-	/** Sorted track index of the child before the gap (not DOM index). */
+	/** Between adjacent tracks: 0..n-2. */
 	readonly index: number;
+}
+
+type HtmlLayoutInsertKind = 'gap' | 'prepend' | 'append' | 'nest' | 'slotPrepend' | 'slotAppend';
+
+interface IHtmlLayoutInsertHit {
+	readonly kind: HtmlLayoutInsertKind;
+	readonly container: HTMLElement;
+	readonly axis: 'column' | 'row';
+	readonly gapIndex?: number;
+	readonly nest?: {
+		readonly target: HTMLElement;
+		readonly axis: 'column' | 'row';
+		readonly edge: 'start' | 'end';
+	};
+	/** Whole sub-grid slot when inserting relative to parent. */
+	readonly slot?: HTMLElement;
+}
+
+type HtmlLayoutInsertTier = 'gap' | 'edgeCard' | 'blank' | 'nest';
+
+interface IHtmlLayoutInsertCandidate {
+	readonly hit: IHtmlLayoutInsertHit;
+	readonly tier: HtmlLayoutInsertTier;
+	readonly distanceSq: number;
+	readonly depth: number;
 }
 
 interface IHtmlLayoutContainerSnapshot {
@@ -1042,13 +1067,17 @@ interface IHtmlLayoutContainerSnapshot {
 	readonly childOrder: readonly Element[];
 }
 
+type HtmlLayoutDragKind = 'resize' | 'insert';
+
 interface IHtmlLayoutDragState {
+	readonly kind: HtmlLayoutDragKind;
 	readonly pointerId: number;
 	readonly startX: number;
 	readonly startY: number;
-	readonly gap: IHtmlLayoutGapHit;
-	readonly startSizes: readonly number[];
-	readonly startTrackTotalPx: number;
+	readonly gap?: IHtmlLayoutGapHit;
+	readonly startSizes?: readonly number[];
+	readonly startTrackTotalPx?: number;
+	readonly card?: HTMLElement;
 }
 
 function htmlLayoutDeckCanvasScale(): number {
@@ -1278,6 +1307,316 @@ function htmlLayoutAreTracksAdjacent(axis: 'column' | 'row', beforeRect: DOMRect
 	return overlapX > 0;
 }
 
+interface IHtmlLayoutGapBounds {
+	readonly left: number;
+	readonly top: number;
+	readonly width: number;
+	readonly height: number;
+}
+
+function htmlLayoutContainerContentRect(container: HTMLElement): { left: number; top: number; right: number; bottom: number } {
+	const rect = container.getBoundingClientRect();
+	const style = getComputedStyle(container);
+	const padLeft = parseFloat(style.paddingLeft) || 0;
+	const padTop = parseFloat(style.paddingTop) || 0;
+	const padRight = parseFloat(style.paddingRight) || 0;
+	const padBottom = parseFloat(style.paddingBottom) || 0;
+	return {
+		left: rect.left + padLeft,
+		top: rect.top + padTop,
+		right: rect.right - padRight,
+		bottom: rect.bottom - padBottom,
+	};
+}
+
+function htmlLayoutChildrenSpan(sorted: readonly HTMLElement[]): { top: number; bottom: number; left: number; right: number } {
+	let top = Infinity;
+	let bottom = -Infinity;
+	let left = Infinity;
+	let right = -Infinity;
+	for (const child of sorted) {
+		const rect = child.getBoundingClientRect();
+		top = Math.min(top, rect.top);
+		bottom = Math.max(bottom, rect.bottom);
+		left = Math.min(left, rect.left);
+		right = Math.max(right, rect.right);
+	}
+	return { top, bottom, left, right };
+}
+
+function htmlLayoutPointerRectStripDistance(clientX: number, clientY: number, strip: IHtmlLayoutGapBounds, slop: number): number {
+	const left = strip.left - slop;
+	const right = strip.left + strip.width + slop;
+	const top = strip.top - slop;
+	const bottom = strip.top + strip.height + slop;
+	if (clientX < left) {
+		return left - clientX;
+	}
+	if (clientX > right) {
+		return clientX - right;
+	}
+	if (clientY < top) {
+		return top - clientY;
+	}
+	if (clientY > bottom) {
+		return clientY - bottom;
+	}
+	return 0;
+}
+
+function htmlLayoutEdgeInsertStrip(
+	container: HTMLElement,
+	axis: 'column' | 'row',
+	edge: 'start' | 'end',
+	sorted: readonly HTMLElement[],
+): IHtmlLayoutGapBounds | null {
+	if (sorted.length === 0) {
+		return null;
+	}
+	const content = htmlLayoutContainerContentRect(container);
+	const span = htmlLayoutChildrenSpan(sorted);
+	const minHit = htmlLayoutGapHitMinPx();
+	if (axis === 'column') {
+		const first = sorted[0]!.getBoundingClientRect();
+		const last = sorted[sorted.length - 1]!.getBoundingClientRect();
+		if (edge === 'start') {
+			const stripRight = first.left;
+			const stripLeft = Math.min(content.left, stripRight - minHit);
+			return { left: stripLeft, top: span.top, width: Math.max(stripRight - stripLeft, minHit), height: span.bottom - span.top };
+		}
+		const stripLeft = last.right;
+		const stripRight = Math.max(content.right, stripLeft + minHit);
+		return { left: stripLeft, top: span.top, width: Math.max(stripRight - stripLeft, minHit), height: span.bottom - span.top };
+	}
+	const first = sorted[0]!.getBoundingClientRect();
+	const last = sorted[sorted.length - 1]!.getBoundingClientRect();
+	if (edge === 'start') {
+		const stripBottom = first.top;
+		const stripTop = Math.min(content.top, stripBottom - minHit);
+		return { left: span.left, top: stripTop, width: span.right - span.left, height: Math.max(stripBottom - stripTop, minHit) };
+	}
+	const stripTop = last.bottom;
+	const stripBottom = Math.max(content.bottom, stripTop + minHit);
+	return { left: span.left, top: stripTop, width: span.right - span.left, height: Math.max(stripBottom - stripTop, minHit) };
+}
+
+function htmlLayoutOuterEdgeHitPx(): number {
+	return 8 / htmlLayoutDeckCanvasScale();
+}
+
+function htmlLayoutPrimaryInsertAxis(container: HTMLElement): 'column' | 'row' {
+	const rowCount = htmlLayoutTrackCount(container, 'row');
+	const colCount = htmlLayoutTrackCount(container, 'column');
+	if (rowCount !== colCount) {
+		return rowCount > colCount ? 'row' : 'column';
+	}
+	return 'column';
+}
+
+function htmlLayoutIsSlideRootGrid(grid: HTMLElement): boolean {
+	return grid.tagName === 'MAIN' && grid.hasAttribute('data-dc-grid');
+}
+
+function htmlLayoutPointerInElementRect(clientX: number, clientY: number, rect: DOMRect): boolean {
+	return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
+function htmlLayoutDeepestGridAt(clientX: number, clientY: number): HTMLElement | null {
+	const root = htmlLayoutActiveSlideRoot();
+	let deepest: HTMLElement | null = null;
+	let maxDepth = -1;
+	for (const grid of htmlLayoutListGridsInSlide(root)) {
+		const content = htmlLayoutContainerContentRect(grid);
+		if (clientX < content.left || clientX > content.right || clientY < content.top || clientY > content.bottom) {
+			continue;
+		}
+		const depth = htmlLayoutGridNestingDepth(grid);
+		if (depth > maxDepth) {
+			maxDepth = depth;
+			deepest = grid;
+		}
+	}
+	return deepest;
+}
+
+function htmlLayoutPointerOnAnyTrackChild(clientX: number, clientY: number, container: HTMLElement): boolean {
+	for (const child of htmlLayoutTrackChildren(container)) {
+		if (htmlLayoutPointerInElementRect(clientX, clientY, child.getBoundingClientRect())) {
+			return true;
+		}
+	}
+	return false;
+}
+
+type HtmlLayoutCardOuterEdgeHit =
+	| { readonly mode: 'primary'; readonly edge: 'start' | 'end' }
+	| { readonly mode: 'secondary'; readonly edge: 'start' | 'end' };
+
+function htmlLayoutPointerOnEdgeCardOuterEdge(
+	card: HTMLElement,
+	container: HTMLElement,
+	clientX: number,
+	clientY: number,
+): HtmlLayoutCardOuterEdgeHit | null {
+	const primary = htmlLayoutPrimaryInsertAxis(container);
+	const sorted = htmlLayoutSortedChildren(container, primary);
+	const index = sorted.indexOf(card);
+	if (index < 0) {
+		return null;
+	}
+	const isFirst = index === 0;
+	const isLast = index === sorted.length - 1;
+	if (!isFirst && !isLast) {
+		return null;
+	}
+	const rect = card.getBoundingClientRect();
+	const hit = htmlLayoutOuterEdgeHitPx();
+	if (!htmlLayoutPointerInElementRect(clientX, clientY, rect)) {
+		return null;
+	}
+	if (primary === 'column') {
+		if (isFirst && clientX >= rect.left && clientX <= rect.left + hit) {
+			return { mode: 'primary', edge: 'start' };
+		}
+		if (isLast && clientX >= rect.right - hit && clientX <= rect.right) {
+			return { mode: 'primary', edge: 'end' };
+		}
+		if ((isFirst || isLast) && clientY >= rect.top && clientY <= rect.top + hit) {
+			return { mode: 'secondary', edge: 'start' };
+		}
+		if ((isFirst || isLast) && clientY >= rect.bottom - hit && clientY <= rect.bottom) {
+			return { mode: 'secondary', edge: 'end' };
+		}
+		return null;
+	}
+	if (isFirst && clientY >= rect.top && clientY <= rect.top + hit) {
+		return { mode: 'primary', edge: 'start' };
+	}
+	if (isLast && clientY >= rect.bottom - hit && clientY <= rect.bottom) {
+		return { mode: 'primary', edge: 'end' };
+	}
+	if ((isFirst || isLast) && clientX >= rect.left && clientX <= rect.left + hit) {
+		return { mode: 'secondary', edge: 'start' };
+	}
+	if ((isFirst || isLast) && clientX >= rect.right - hit && clientX <= rect.right) {
+		return { mode: 'secondary', edge: 'end' };
+	}
+	return null;
+}
+
+function htmlLayoutCardNestFromPointer(
+	card: HTMLElement,
+	clientX: number,
+	clientY: number,
+): { readonly axis: 'column' | 'row'; readonly edge: 'start' | 'end' } | null {
+	const rect = card.getBoundingClientRect();
+	if (rect.width <= 0 || rect.height <= 0) {
+		return null;
+	}
+	const nx = (clientX - rect.left) / rect.width;
+	const ny = (clientY - rect.top) / rect.height;
+	if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
+		return null;
+	}
+	let quadrant: 'top' | 'bottom' | 'left' | 'right';
+	if (ny < nx && ny < 1 - nx) {
+		quadrant = 'top';
+	} else if (ny > nx && ny > 1 - nx) {
+		quadrant = 'bottom';
+	} else if (ny < 1 - nx && ny > nx) {
+		quadrant = 'left';
+	} else if (ny > 1 - nx && ny < nx) {
+		quadrant = 'right';
+	} else if (nx < 0.5) {
+		quadrant = 'left';
+	} else if (nx > 0.5) {
+		quadrant = 'right';
+	} else if (ny < 0.5) {
+		quadrant = 'top';
+	} else {
+		quadrant = 'bottom';
+	}
+	switch (quadrant) {
+		case 'top':
+			return { axis: 'row', edge: 'start' };
+		case 'bottom':
+			return { axis: 'row', edge: 'end' };
+		case 'left':
+			return { axis: 'column', edge: 'start' };
+		default:
+			return { axis: 'column', edge: 'end' };
+	}
+}
+
+function htmlLayoutNestInsertPreviewBounds(hit: IHtmlLayoutInsertHit): IHtmlLayoutGapBounds | null {
+	const nest = hit.nest;
+	if (!nest) {
+		return null;
+	}
+	const rect = nest.target.getBoundingClientRect();
+	if (nest.axis === 'column') {
+		if (nest.edge === 'start') {
+			return { left: rect.left, top: rect.top, width: rect.width / 2, height: rect.height };
+		}
+		return { left: rect.left + rect.width / 2, top: rect.top, width: rect.width / 2, height: rect.height };
+	}
+	if (nest.edge === 'start') {
+		return { left: rect.left, top: rect.top, width: rect.width, height: rect.height / 2 };
+	}
+	return { left: rect.left, top: rect.top + rect.height / 2, width: rect.width, height: rect.height / 2 };
+}
+
+function htmlLayoutInsertPreviewBounds(hit: IHtmlLayoutInsertHit): IHtmlLayoutGapBounds | null {
+	if (hit.kind === 'nest') {
+		return htmlLayoutNestInsertPreviewBounds(hit);
+	}
+	const sorted = htmlLayoutSortedChildren(hit.container, hit.axis);
+	if (sorted.length === 0) {
+		return null;
+	}
+	if (hit.kind === 'gap' && hit.gapIndex !== undefined) {
+		const before = sorted[hit.gapIndex];
+		const after = sorted[hit.gapIndex + 1];
+		if (!before || !after) {
+			return null;
+		}
+		return htmlLayoutGapBounds(hit.axis, before.getBoundingClientRect(), after.getBoundingClientRect());
+	}
+	if (hit.kind === 'prepend' || hit.kind === 'slotPrepend') {
+		return htmlLayoutEdgeInsertStrip(hit.container, hit.axis, 'start', sorted);
+	}
+	if (hit.kind === 'append' || hit.kind === 'slotAppend') {
+		return htmlLayoutEdgeInsertStrip(hit.container, hit.axis, 'end', sorted);
+	}
+	return null;
+}
+
+function htmlLayoutGapBounds(axis: 'column' | 'row', beforeRect: DOMRect, afterRect: DOMRect): IHtmlLayoutGapBounds {
+	const minHit = htmlLayoutGapHitMinPx();
+	if (axis === 'column') {
+		const gapLeft = beforeRect.right;
+		const gapRight = afterRect.left;
+		const top = Math.min(beforeRect.top, afterRect.top);
+		const bottom = Math.max(beforeRect.bottom, afterRect.bottom);
+		const gapWidth = gapRight - gapLeft;
+		if (gapWidth >= minHit) {
+			return { left: gapLeft, top, width: gapWidth, height: bottom - top };
+		}
+		const centerX = (gapLeft + gapRight) / 2;
+		return { left: centerX - minHit / 2, top, width: minHit, height: bottom - top };
+	}
+	const gapTop = beforeRect.bottom;
+	const gapBottom = afterRect.top;
+	const left = Math.min(beforeRect.left, afterRect.left);
+	const right = Math.max(beforeRect.right, afterRect.right);
+	const gapHeight = gapBottom - gapTop;
+	if (gapHeight >= minHit) {
+		return { left, top: gapTop, width: right - left, height: gapHeight };
+	}
+	const centerY = (gapTop + gapBottom) / 2;
+	return { left, top: centerY - minHit / 2, width: right - left, height: minHit };
+}
+
 function htmlLayoutPointerGapDistance(clientX: number, clientY: number, axis: 'column' | 'row', beforeRect: DOMRect, afterRect: DOMRect, slop: number): number {
 	const minHit = htmlLayoutGapHitMinPx();
 	if (axis === 'column') {
@@ -1338,45 +1677,380 @@ function htmlLayoutPointerGapDistance(clientX: number, clientY: number, axis: 'c
 	return 0;
 }
 
-function htmlLayoutHitTestGap(clientX: number, clientY: number): IHtmlLayoutGapHit | null {
-	const slop = htmlLayoutGapHitSlopPx();
-	let bestDistanceSq = Infinity;
-	let bestHit: IHtmlLayoutGapHit | null = null;
+interface IHtmlLayoutGapCandidate {
+	readonly hit: IHtmlLayoutGapHit;
+	readonly distanceSq: number;
+}
 
+function htmlLayoutIsBetterInsertCandidate(candidate: IHtmlLayoutInsertCandidate, best: IHtmlLayoutInsertCandidate | undefined): boolean {
+	if (!best) {
+		return true;
+	}
+	const priority = (value: IHtmlLayoutInsertCandidate): [number, number, number] => {
+		let tierRank: number;
+		if (value.tier === 'gap' && value.distanceSq === 0) {
+			tierRank = 0;
+		} else if (value.tier === 'edgeCard') {
+			tierRank = 1;
+		} else if (value.tier === 'blank') {
+			tierRank = 2;
+		} else if (value.tier === 'gap') {
+			tierRank = 3;
+		} else {
+			tierRank = 4;
+		}
+		return [tierRank, value.distanceSq, -value.depth];
+	};
+	const next = priority(candidate);
+	const prev = priority(best);
+	for (let index = 0; index < next.length; index++) {
+		if (next[index]! < prev[index]!) {
+			return true;
+		}
+		if (next[index]! > prev[index]!) {
+			return false;
+		}
+	}
+	return false;
+}
+
+function htmlLayoutListGridsInSlide(root: HTMLElement): HTMLElement[] {
+	return [...root.querySelectorAll('[data-dc-grid]')].filter((element): element is HTMLElement => element instanceof HTMLElement);
+}
+
+function htmlLayoutGridNestingDepth(grid: HTMLElement): number {
+	let depth = 0;
+	let parent = grid.parentElement;
+	while (parent) {
+		if (htmlLayoutIsGridContainer(parent)) {
+			depth++;
+		}
+		parent = parent.parentElement;
+	}
+	return depth;
+}
+
+function htmlLayoutFindCardAt(clientX: number, clientY: number): HTMLElement | null {
+	for (let node = htmlLayoutElementFromPoint(clientX, clientY); node; node = node.parentElement) {
+		const parent = node.parentElement;
+		if (!parent || !htmlLayoutIsGridContainer(parent)) {
+			continue;
+		}
+		let card: Element = node;
+		while (card.parentElement && card.parentElement !== parent) {
+			card = card.parentElement;
+		}
+		if (card instanceof HTMLElement && htmlLayoutTrackChildren(parent).includes(card)) {
+			return card;
+		}
+	}
+	return null;
+}
+
+function htmlLayoutBestGapInContainer(container: HTMLElement, clientX: number, clientY: number, maxDistancePx: number): IHtmlLayoutGapCandidate | null {
+	const slop = htmlLayoutGapHitSlopPx();
+	let best: IHtmlLayoutGapCandidate | undefined;
+
+	for (const axis of ['column', 'row'] as const) {
+		if (htmlLayoutTrackCount(container, axis) < 2) {
+			continue;
+		}
+		const sorted = htmlLayoutSortedChildren(container, axis);
+		const pairCount = Math.min(sorted.length, htmlLayoutTrackCount(container, axis)) - 1;
+		for (let index = 0; index < pairCount; index++) {
+			const before = sorted[index];
+			const after = sorted[index + 1];
+			if (!before || !after) {
+				continue;
+			}
+			const beforeRect = before.getBoundingClientRect();
+			const afterRect = after.getBoundingClientRect();
+			if (!htmlLayoutAreTracksAdjacent(axis, beforeRect, afterRect)) {
+				continue;
+			}
+			const distance = htmlLayoutPointerGapDistance(clientX, clientY, axis, beforeRect, afterRect, slop);
+			if (!Number.isFinite(distance) || distance > maxDistancePx) {
+				continue;
+			}
+			const candidate: IHtmlLayoutGapCandidate = {
+				hit: { container, axis, index },
+				distanceSq: distance * distance,
+			};
+			if (!best || candidate.distanceSq < best.distanceSq) {
+				best = candidate;
+			}
+		}
+	}
+	return best ?? null;
+}
+
+function htmlLayoutBestEdgeInsertInContainer(
+	container: HTMLElement,
+	clientX: number,
+	clientY: number,
+	maxDistancePx: number,
+	primaryAxisOnly = false,
+): IHtmlLayoutGapCandidate | null {
+	const slop = htmlLayoutGapHitSlopPx();
+	let best: IHtmlLayoutGapCandidate | undefined;
+	const axes = primaryAxisOnly ? [htmlLayoutPrimaryInsertAxis(container)] : (['column', 'row'] as const);
+
+	for (const axis of axes) {
+		const sorted = htmlLayoutSortedChildren(container, axis);
+		if (sorted.length === 0) {
+			continue;
+		}
+		for (const edge of ['start', 'end'] as const) {
+			const strip = htmlLayoutEdgeInsertStrip(container, axis, edge, sorted);
+			if (!strip) {
+				continue;
+			}
+			const distance = htmlLayoutPointerRectStripDistance(clientX, clientY, strip, slop);
+			if (!Number.isFinite(distance) || distance > maxDistancePx) {
+				continue;
+			}
+			const index = edge === 'start' ? -1 : sorted.length - 1;
+			const candidate: IHtmlLayoutGapCandidate = {
+				hit: { container, axis, index },
+				distanceSq: distance * distance,
+			};
+			if (!best || candidate.distanceSq < best.distanceSq) {
+				best = candidate;
+			}
+		}
+	}
+	return best ?? null;
+}
+
+function htmlLayoutEdgeCardInsertAtPointer(clientX: number, clientY: number, draggedCard: HTMLElement | undefined): IHtmlLayoutInsertCandidate | null {
+	if (!draggedCard) {
+		return null;
+	}
+	const target = htmlLayoutFindCardAt(clientX, clientY);
+	if (!target || target === draggedCard || draggedCard.contains(target) || target.contains(draggedCard)) {
+		return null;
+	}
+	const container = target.parentElement;
+	if (!container || !htmlLayoutIsGridContainer(container)) {
+		return null;
+	}
+	const outerEdge = htmlLayoutPointerOnEdgeCardOuterEdge(target, container, clientX, clientY);
+	if (!outerEdge) {
+		return null;
+	}
+	const primary = htmlLayoutPrimaryInsertAxis(container);
+	if (outerEdge.mode === 'primary') {
+		return {
+			hit: {
+				kind: outerEdge.edge === 'start' ? 'prepend' : 'append',
+				container,
+				axis: primary,
+			},
+			tier: 'edgeCard',
+			distanceSq: 0,
+			depth: htmlLayoutGridNestingDepth(container),
+		};
+	}
+	const parent = container.parentElement;
+	if (!parent || !htmlLayoutIsGridContainer(parent)) {
+		return null;
+	}
+	return {
+		hit: {
+			kind: outerEdge.edge === 'start' ? 'slotPrepend' : 'slotAppend',
+			container: parent,
+			axis: htmlLayoutPrimaryInsertAxis(parent),
+			slot: container,
+		},
+		tier: 'edgeCard',
+		distanceSq: 0,
+		depth: htmlLayoutGridNestingDepth(parent),
+	};
+}
+
+function htmlLayoutBlankInsertAtPointer(clientX: number, clientY: number, maxDistancePx: number): IHtmlLayoutInsertCandidate | null {
+	const container = htmlLayoutDeepestGridAt(clientX, clientY);
+	if (!container) {
+		return null;
+	}
+	if (htmlLayoutPointerOnAnyTrackChild(clientX, clientY, container)) {
+		return null;
+	}
+	const axis = htmlLayoutPrimaryInsertAxis(container);
+	const edge = htmlLayoutBestEdgeInsertInContainer(container, clientX, clientY, maxDistancePx, true);
+	if (!edge) {
+		return null;
+	}
+	return {
+		hit: {
+			kind: edge.hit.index === -1 ? 'prepend' : 'append',
+			container,
+			axis,
+		},
+		tier: 'blank',
+		distanceSq: edge.distanceSq,
+		depth: htmlLayoutGridNestingDepth(container),
+	};
+}
+
+function htmlLayoutNestInsertAtPointer(clientX: number, clientY: number, draggedCard: HTMLElement | undefined): IHtmlLayoutInsertCandidate | null {
+	if (!draggedCard) {
+		return null;
+	}
+	const target = htmlLayoutFindCardAt(clientX, clientY);
+	if (!target || target === draggedCard || draggedCard.contains(target) || target.contains(draggedCard)) {
+		return null;
+	}
+	const container = target.parentElement;
+	if (!container || !htmlLayoutIsGridContainer(container)) {
+		return null;
+	}
+	if (htmlLayoutPointerOnEdgeCardOuterEdge(target, container, clientX, clientY)) {
+		return null;
+	}
+	const nest = htmlLayoutCardNestFromPointer(target, clientX, clientY);
+	if (!nest) {
+		return null;
+	}
+	return {
+		hit: {
+			kind: 'nest',
+			container,
+			axis: nest.axis,
+			nest: { target, axis: nest.axis, edge: nest.edge },
+		},
+		tier: 'nest',
+		distanceSq: 0,
+		depth: htmlLayoutGridNestingDepth(container) + 1,
+	};
+}
+
+function htmlLayoutCollapseGridContainers(root: HTMLElement): HTMLElement[] {
+	const affected: HTMLElement[] = [];
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const grid of [...htmlLayoutListGridsInSlide(root)]) {
+			if (htmlLayoutIsSlideRootGrid(grid)) {
+				continue;
+			}
+			const children = htmlLayoutTrackChildren(grid);
+			const parent = grid.parentElement;
+			if (children.length === 0) {
+				grid.remove();
+				if (parent && htmlLayoutIsGridContainer(parent)) {
+					affected.push(parent);
+				}
+				changed = true;
+				continue;
+			}
+			if (children.length === 1 && parent) {
+				const child = children[0]!;
+				parent.insertBefore(child, grid);
+				grid.remove();
+				if (htmlLayoutIsGridContainer(parent)) {
+					htmlLayoutRetune(parent);
+					affected.push(parent);
+				}
+				changed = true;
+			}
+		}
+	}
+	return affected;
+}
+
+function htmlLayoutCreateSubGrid(axis: 'column' | 'row'): HTMLElement {
+	const grid = document.createElement('div');
+	grid.setAttribute('data-dc-grid', '');
+	grid.setAttribute(axis === 'column' ? 'data-tpl-c' : 'data-tpl-r', '1fr 1fr');
+	grid.style.display = 'grid';
+	grid.style.minHeight = '0';
+	grid.style.minWidth = '0';
+	if (axis === 'column') {
+		grid.style.gridTemplateColumns = '1fr 1fr';
+	} else {
+		grid.style.gridTemplateRows = '1fr 1fr';
+	}
+	return grid;
+}
+
+/** Resize / hover: pointer must be inside the gap strip (not merely closest to it). */
+function htmlLayoutHitTestGapForResize(clientX: number, clientY: number): IHtmlLayoutGapHit | null {
+	let best: IHtmlLayoutGapCandidate | undefined;
 	for (let node = htmlLayoutElementFromPoint(clientX, clientY); node; node = node.parentElement) {
 		if (!htmlLayoutIsGridContainer(node)) {
 			continue;
 		}
-		for (const axis of ['column', 'row'] as const) {
-			if (htmlLayoutTrackCount(node, axis) < 2) {
-				continue;
-			}
-			const sorted = htmlLayoutSortedChildren(node, axis);
-			const pairCount = Math.min(sorted.length, htmlLayoutTrackCount(node, axis)) - 1;
-			for (let index = 0; index < pairCount; index++) {
-				const before = sorted[index];
-				const after = sorted[index + 1];
-				if (!before || !after) {
-					continue;
-				}
-				const beforeRect = before.getBoundingClientRect();
-				const afterRect = after.getBoundingClientRect();
-				if (!htmlLayoutAreTracksAdjacent(axis, beforeRect, afterRect)) {
-					continue;
-				}
-				const distance = htmlLayoutPointerGapDistance(clientX, clientY, axis, beforeRect, afterRect, slop);
-				if (!Number.isFinite(distance)) {
-					continue;
-				}
-				const distanceSq = distance * distance;
-				if (distanceSq < bestDistanceSq) {
-					bestDistanceSq = distanceSq;
-					bestHit = { container: node, axis, index };
-				}
-			}
+		const candidate = htmlLayoutBestGapInContainer(node, clientX, clientY, 0);
+		if (candidate && (!best || candidate.distanceSq < best.distanceSq)) {
+			best = candidate;
 		}
 	}
-	return bestHit;
+	return best?.hit ?? null;
+}
+
+/** Priority: gap > edge card > blank > gap(slop) > diagonal nest. */
+function htmlLayoutHitTestForInsert(clientX: number, clientY: number, draggedCard?: HTMLElement): IHtmlLayoutInsertHit | null {
+	const slop = htmlLayoutGapHitSlopPx();
+	const root = htmlLayoutActiveSlideRoot();
+	let best: IHtmlLayoutInsertCandidate | undefined;
+
+	for (const container of htmlLayoutListGridsInSlide(root)) {
+		const gap = htmlLayoutBestGapInContainer(container, clientX, clientY, slop);
+		if (!gap) {
+			continue;
+		}
+		const candidate: IHtmlLayoutInsertCandidate = {
+			hit: {
+				kind: 'gap',
+				container,
+				axis: gap.hit.axis,
+				gapIndex: gap.hit.index,
+			},
+			tier: 'gap',
+			distanceSq: gap.distanceSq,
+			depth: htmlLayoutGridNestingDepth(container),
+		};
+		if (htmlLayoutIsBetterInsertCandidate(candidate, best)) {
+			best = candidate;
+		}
+	}
+
+	const edgeCard = htmlLayoutEdgeCardInsertAtPointer(clientX, clientY, draggedCard);
+	if (edgeCard && htmlLayoutIsBetterInsertCandidate(edgeCard, best)) {
+		best = edgeCard;
+	}
+
+	const blank = htmlLayoutBlankInsertAtPointer(clientX, clientY, slop);
+	if (blank && htmlLayoutIsBetterInsertCandidate(blank, best)) {
+		best = blank;
+	}
+
+	const nest = htmlLayoutNestInsertAtPointer(clientX, clientY, draggedCard);
+	if (nest && htmlLayoutIsBetterInsertCandidate(nest, best)) {
+		best = nest;
+	}
+
+	return best?.hit ?? null;
+}
+
+function htmlLayoutRetune(container: HTMLElement): void {
+	const count = htmlLayoutTrackChildren(container).length;
+	if (count === 0) {
+		return;
+	}
+	const template = Array.from({ length: count }, () => '1fr').join(' ');
+	const rowCount = htmlLayoutTrackCount(container, 'row');
+	const colCount = htmlLayoutTrackCount(container, 'column');
+	if (rowCount > colCount && rowCount >= 2) {
+		container.style.gridTemplateRows = template;
+		container.setAttribute('data-tpl-r', template);
+		container.removeAttribute('data-min-r');
+		return;
+	}
+	container.style.gridTemplateColumns = template;
+	container.setAttribute('data-tpl-c', template);
+	container.removeAttribute('data-min-c');
 }
 
 function htmlLayoutApplyTrackSizes(container: HTMLElement, axis: 'column' | 'row', sizesPx: readonly number[], mins?: readonly number[], totalPx?: number): void {
@@ -1440,6 +2114,7 @@ function htmlLayoutRestoreContainer(container: HTMLElement, snapshot: IHtmlLayou
 class HtmlLayoutEditBridge {
 	private _active = false;
 	private _pageStyle: HTMLStyleElement | undefined;
+	private _insertPreview: HTMLDivElement | undefined;
 	private _snapshots = new Map<HTMLElement, IHtmlLayoutContainerSnapshot>();
 	private _drag: IHtmlLayoutDragState | undefined;
 	private _outlineTargets = new Set<HTMLElement>();
@@ -1465,6 +2140,7 @@ class HtmlLayoutEditBridge {
 		} else {
 			this._finishDrag();
 			this._clearOutlines();
+			this._removeInsertPreview();
 			document.documentElement.removeAttribute('data-vscode-layout-edit');
 			this._pageStyle?.remove();
 			this._pageStyle = undefined;
@@ -1482,19 +2158,34 @@ class HtmlLayoutEditBridge {
 		if (!this._active || event.button !== 0) {
 			return false;
 		}
-		const gap = htmlLayoutHitTestGap(event.clientX, event.clientY);
-		if (!gap) {
+		const gap = htmlLayoutHitTestGapForResize(event.clientX, event.clientY);
+		if (gap) {
+			this._drag = {
+				kind: 'resize',
+				pointerId: event.pointerId,
+				startX: event.clientX,
+				startY: event.clientY,
+				gap,
+				startSizes: htmlLayoutNormalizedTrackSizes(gap.container, gap.axis),
+				startTrackTotalPx: htmlLayoutTrackTotalPx(gap.container, gap.axis),
+			};
+			this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
+			event.preventDefault();
+			return true;
+		}
+		const card = htmlLayoutFindCardAt(event.clientX, event.clientY);
+		if (!card) {
 			return false;
 		}
 		this._drag = {
+			kind: 'insert',
 			pointerId: event.pointerId,
 			startX: event.clientX,
 			startY: event.clientY,
-			gap,
-			startSizes: htmlLayoutNormalizedTrackSizes(gap.container, gap.axis),
-			startTrackTotalPx: htmlLayoutTrackTotalPx(gap.container, gap.axis),
+			card,
 		};
-		this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
+		this._setOutline(card, HTML_LAYOUT_EDIT_OUTLINE_BLUE);
+		this._setForcedCursor('grabbing');
 		event.preventDefault();
 		return true;
 	}
@@ -1507,17 +2198,24 @@ class HtmlLayoutEditBridge {
 			if (event.pointerId !== this._drag.pointerId) {
 				return true;
 			}
-			this._applyResizeDrag(event);
+			if (this._drag.kind === 'resize') {
+				this._applyResizeDrag(event);
+			} else {
+				this._applyInsertDrag(event);
+			}
 			event.preventDefault();
 			return true;
 		}
 		this._updateHoverCursor(event.clientX, event.clientY);
-		return !!this._drag || !!htmlLayoutHitTestGap(event.clientX, event.clientY);
+		return !!this._drag || !!htmlLayoutHitTestGapForResize(event.clientX, event.clientY) || !!htmlLayoutFindCardAt(event.clientX, event.clientY);
 	}
 
 	handlePointerUp(event: PointerEvent): boolean {
 		if (!this._drag || event.pointerId !== this._drag.pointerId) {
 			return false;
+		}
+		if (this._drag.kind === 'insert') {
+			this._commitCardInsert(event.clientX, event.clientY);
 		}
 		this._finishDrag();
 		this._updateHoverCursor(event.clientX, event.clientY);
@@ -1536,7 +2234,7 @@ class HtmlLayoutEditBridge {
 
 	private _applyResizeDrag(event: PointerEvent): void {
 		const drag = this._drag;
-		if (!drag) {
+		if (!drag?.gap || !drag.startSizes) {
 			return;
 		}
 		const { container, axis } = drag.gap;
@@ -1576,25 +2274,236 @@ class HtmlLayoutEditBridge {
 		this._setOutline(children[sortedIndex + 1], HTML_LAYOUT_EDIT_OUTLINE_ORANGE);
 	}
 
+	private _applyInsertDrag(event: PointerEvent): void {
+		const drag = this._drag;
+		if (!drag?.card) {
+			return;
+		}
+		this._clearOutlines();
+		this._setOutline(drag.card, HTML_LAYOUT_EDIT_OUTLINE_BLUE);
+		const hit = htmlLayoutHitTestForInsert(event.clientX, event.clientY, drag.card);
+		if (hit) {
+			this._showInsertPreview(hit);
+		} else {
+			this._hideInsertPreview();
+		}
+		this._setForcedCursor('grabbing');
+	}
+
+	private _commitCardInsert(clientX: number, clientY: number): void {
+		const drag = this._drag;
+		if (!drag?.card) {
+			return;
+		}
+		const hit = htmlLayoutHitTestForInsert(clientX, clientY, drag.card);
+		if (!hit) {
+			return;
+		}
+		this._commitInsertHit(hit, drag.card);
+	}
+
+	private _commitInsertHit(hit: IHtmlLayoutInsertHit, card: HTMLElement): void {
+		if (card.contains(hit.container) || (hit.slot && (card.contains(hit.slot) || card === hit.slot))) {
+			return;
+		}
+		if (hit.kind === 'nest' && hit.nest) {
+			this._commitNestInsert(hit, card);
+			return;
+		}
+		const targetContainer = hit.container;
+		const sorted = htmlLayoutSortedChildren(targetContainer, hit.axis);
+		let insertBefore: HTMLElement | null;
+		switch (hit.kind) {
+			case 'gap': {
+				const gapIndex = hit.gapIndex;
+				if (gapIndex === undefined) {
+					return;
+				}
+				insertBefore = sorted[gapIndex + 1] ?? null;
+				if (!insertBefore || insertBefore === card) {
+					return;
+				}
+				if (card.parentElement === targetContainer && card.nextElementSibling === insertBefore) {
+					return;
+				}
+				break;
+			}
+			case 'prepend':
+				insertBefore = sorted[0] ?? null;
+				if (card.parentElement === targetContainer && card === insertBefore) {
+					return;
+				}
+				break;
+			case 'append':
+				insertBefore = null;
+				if (card.parentElement === targetContainer && targetContainer.lastElementChild === card) {
+					return;
+				}
+				break;
+			case 'slotPrepend': {
+				const slot = hit.slot;
+				if (!slot || slot === card) {
+					return;
+				}
+				insertBefore = slot;
+				if (card.parentElement === targetContainer && card.nextElementSibling === slot) {
+					return;
+				}
+				break;
+			}
+			case 'slotAppend': {
+				const slot = hit.slot;
+				if (!slot || slot === card) {
+					return;
+				}
+				insertBefore = slot.nextElementSibling instanceof HTMLElement ? slot.nextElementSibling : null;
+				if (card.parentElement === targetContainer && card.previousElementSibling === slot) {
+					return;
+				}
+				break;
+			}
+			default:
+				return;
+		}
+		const sourceParent = card.parentElement;
+		if (!sourceParent) {
+			return;
+		}
+		if (insertBefore) {
+			targetContainer.insertBefore(card, insertBefore);
+		} else {
+			targetContainer.appendChild(card);
+		}
+		this._finalizeInsert(sourceParent, targetContainer);
+	}
+
+	private _commitNestInsert(hit: IHtmlLayoutInsertHit, dragged: HTMLElement): void {
+		const nest = hit.nest;
+		if (!nest) {
+			return;
+		}
+		const { target, edge } = nest;
+		const parent = hit.container;
+		if (target === dragged || !parent.contains(target) || dragged.contains(target) || target.contains(dragged)) {
+			return;
+		}
+		const existingParent = target.parentElement;
+		if (existingParent && htmlLayoutIsGridContainer(existingParent)) {
+			const siblings = htmlLayoutTrackChildren(existingParent);
+			if (siblings.length === 2 && siblings.includes(dragged)) {
+				if (edge === 'start' && siblings[0] === dragged && siblings[1] === target) {
+					return;
+				}
+				if (edge === 'end' && siblings[0] === target && siblings[1] === dragged) {
+					return;
+				}
+			}
+		}
+		const sourceParent = dragged.parentElement;
+		const subGrid = htmlLayoutCreateSubGrid(nest.axis);
+		parent.insertBefore(subGrid, target);
+		subGrid.appendChild(target);
+		if (edge === 'start') {
+			subGrid.insertBefore(dragged, target);
+		} else {
+			subGrid.appendChild(dragged);
+		}
+		if (sourceParent && sourceParent !== subGrid && sourceParent !== parent) {
+			htmlLayoutRetune(sourceParent);
+			this._captureContainer(sourceParent);
+		}
+		this._captureContainer(parent);
+		this._captureContainer(subGrid);
+		this._collapseGridContainers();
+	}
+
+	private _finalizeInsert(sourceParent: HTMLElement, targetContainer: HTMLElement): void {
+		if (sourceParent !== targetContainer) {
+			htmlLayoutRetune(sourceParent);
+			this._captureContainer(sourceParent);
+		}
+		htmlLayoutRetune(targetContainer);
+		this._captureContainer(targetContainer);
+		this._collapseGridContainers();
+	}
+
+	private _collapseGridContainers(): void {
+		const affected = htmlLayoutCollapseGridContainers(htmlLayoutActiveSlideRoot());
+		for (const container of affected) {
+			this._captureContainer(container);
+		}
+	}
+
 	private _finishDrag(): void {
 		this._drag = undefined;
 		this._clearOutlines();
+		this._hideInsertPreview();
 		this._clearCursorVisuals();
+	}
+
+	private _ensureInsertPreview(): HTMLDivElement {
+		if (this._insertPreview) {
+			return this._insertPreview;
+		}
+		const preview = document.createElement('div');
+		preview.setAttribute('data-vscode-layout-insert-preview', 'true');
+		preview.style.cssText = [
+			'position:fixed',
+			'pointer-events:none',
+			'z-index:2147483000',
+			'box-sizing:border-box',
+			'border:2px dashed #0078d4',
+			'background:color-mix(in srgb, #0078d4 16%, transparent)',
+			'border-radius:3px',
+			'display:none',
+		].join(';');
+		document.body.appendChild(preview);
+		this._insertPreview = preview;
+		return preview;
+	}
+
+	private _showInsertPreview(hit: IHtmlLayoutInsertHit): void {
+		const bounds = htmlLayoutInsertPreviewBounds(hit);
+		if (!bounds) {
+			this._hideInsertPreview();
+			return;
+		}
+		const preview = this._ensureInsertPreview();
+		preview.style.display = 'block';
+		preview.style.left = `${bounds.left}px`;
+		preview.style.top = `${bounds.top}px`;
+		preview.style.width = `${Math.max(bounds.width, 1)}px`;
+		preview.style.height = `${Math.max(bounds.height, 1)}px`;
+	}
+
+	private _hideInsertPreview(): void {
+		if (this._insertPreview) {
+			this._insertPreview.style.display = 'none';
+		}
+	}
+
+	private _removeInsertPreview(): void {
+		this._insertPreview?.remove();
+		this._insertPreview = undefined;
 	}
 
 	private _updateHoverCursor(clientX: number, clientY: number): void {
 		if (this._drag) {
 			return;
 		}
-		const gap = htmlLayoutHitTestGap(clientX, clientY);
+		const gap = htmlLayoutHitTestGapForResize(clientX, clientY);
 		if (gap) {
 			this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
+			return;
+		}
+		if (htmlLayoutFindCardAt(clientX, clientY)) {
+			this._setForcedCursor('grab');
 			return;
 		}
 		this._clearCursorVisuals();
 	}
 
-	private _setForcedCursor(cursor: 'col-resize' | 'row-resize' | undefined): void {
+	private _setForcedCursor(cursor: 'col-resize' | 'row-resize' | 'grab' | 'grabbing' | undefined): void {
 		this._clearCursorVisuals();
 		if (!cursor) {
 			return;

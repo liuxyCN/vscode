@@ -831,7 +831,7 @@ export interface IBrowserViewService {
 	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
 
 	/**
-	 * Toggle in-page grid layout edit mode (gap resize) for DC grid containers.
+	 * Toggle in-page grid layout edit mode (gap resize and card insert) for DC grid containers.
 	 */
 	setHtmlLayoutMode(id: string, active: boolean): Promise<void>;
 
