@@ -159,29 +159,40 @@ export class BrowserEditorHtmlLayoutModeContribution extends BrowserEditorContri
 				return;
 			}
 
-			const patch: IBrowserHtmlPatch = {
-				domPath: payload.domPath,
-				replaceOuterHtml: normalizeLayoutReplaceOuterHtml(payload.replaceOuterHtml, document),
-			};
+			let lastDcTemplateHtml: string | undefined;
+			let lastDcComponentName: string | undefined;
 
-			let patchOptions: { dcAnnotatedTemplate?: string; dcComponentName?: string } | undefined;
-			const parsed = parseHtmlEditDomPath(payload.domPath);
-			if (parsed.kind === 'tpl') {
-				const annotated = await model.getDcAnnotatedTemplate(parsed.componentName ?? componentName);
-				if (!annotated) {
-					this.notificationService.error(browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.'));
+			for (const entry of payload.patches) {
+				const patch: IBrowserHtmlPatch = {
+					domPath: entry.domPath,
+					replaceOuterHtml: normalizeLayoutReplaceOuterHtml(entry.replaceOuterHtml, document),
+				};
+
+				let patchOptions: { dcAnnotatedTemplate?: string; dcComponentName?: string } | undefined;
+				const parsed = parseHtmlEditDomPath(entry.domPath);
+				if (parsed.kind === 'tpl') {
+					const patchComponentName = parsed.componentName ?? componentName;
+					const annotated = await model.getDcAnnotatedTemplate(patchComponentName);
+					if (!annotated) {
+						this.notificationService.error(browserViewLabel('htmlEditElementNotFound', 'Selected element was not found in the HTML source.'));
+						return;
+					}
+					patchOptions = { dcAnnotatedTemplate: annotated, dcComponentName: fileComponentName ?? patchComponentName };
+				}
+
+				const result = applyBrowserHtmlPatch(source, patch, document, patchOptions);
+				if (!result.ok) {
+					this.notificationService.error(result.error ?? browserViewLabel('htmlLayoutSaveFailed', 'Could not save layout changes.'));
 					return;
 				}
-				patchOptions = { dcAnnotatedTemplate: annotated, dcComponentName: fileComponentName ?? componentName };
+
+				source = result.source;
+				if (result.dcTemplateHtml && result.dcComponentName) {
+					lastDcTemplateHtml = result.dcTemplateHtml;
+					lastDcComponentName = result.dcComponentName;
+				}
 			}
 
-			const result = applyBrowserHtmlPatch(source, patch, document, patchOptions);
-			if (!result.ok) {
-				this.notificationService.error(result.error ?? browserViewLabel('htmlLayoutSaveFailed', 'Could not save layout changes.'));
-				return;
-			}
-
-			source = result.source;
 			await this._writeSource(source);
 
 			// Revert live DOM mutations before DC hot update — layout editing moves
@@ -189,8 +200,8 @@ export class BrowserEditorHtmlLayoutModeContribution extends BrowserEditorContri
 			await model.restoreHtmlLayoutDefaults();
 			await this.setLayoutModeActive(false);
 
-			if (result.dcTemplateHtml && result.dcComponentName) {
-				await model.updateDcTemplate(result.dcComponentName, result.dcTemplateHtml);
+			if (lastDcTemplateHtml && lastDcComponentName) {
+				await model.updateDcTemplate(lastDcComponentName, lastDcTemplateHtml);
 			} else {
 				const dcTemplateHtml = readXDcDecodedTemplate(source, document);
 				if (dcTemplateHtml) {

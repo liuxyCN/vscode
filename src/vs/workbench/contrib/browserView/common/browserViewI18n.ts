@@ -239,7 +239,7 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditRedo: { en: 'Redo', 'zh-cn': '\u91CD\u505A', 'zh-Hans': '\u91CD\u505A' },
 	htmlEditDelete: { en: 'Delete element', 'zh-cn': '\u5220\u9664\u5143\u7D20', 'zh-Hans': '\u5220\u9664\u5143\u7D20' },
 	htmlEditCancel: { en: 'Cancel', 'zh-cn': '\u53D6\u6D88', 'zh-Hans': '\u53D6\u6D88' },
-	htmlEditSave: { en: 'Save to File', 'zh-cn': '\u4FDD\u5B58\u5230\u6587\u4EF6', 'zh-Hans': '\u4FDD\u5B58\u5230\u6587\u4EF6' },
+	htmlEditSave: { en: 'Save', 'zh-cn': '\u4FDD\u5B58', 'zh-Hans': '\u4FDD\u5B58' },
 	htmlEditSaveNoSelection: { en: 'Select an element before saving.', 'zh-cn': '\u4FDD\u5B58\u524D\u8BF7\u5148\u9009\u62E9\u4E00\u4E2A\u5143\u7D20\u3002', 'zh-Hans': '\u4FDD\u5B58\u524D\u8BF7\u5148\u9009\u62E9\u4E00\u4E2A\u5143\u7D20\u3002' },
 	htmlEditSaveNoChanges: { en: 'No changes to save.', 'zh-cn': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u66F4\u6539\u3002', 'zh-Hans': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u66F4\u6539\u3002' },
 	htmlEditSaveFailed: { en: 'Could not apply the edit.', 'zh-cn': '\u65E0\u6CD5\u5E94\u7528\u7F16\u8F91\u3002', 'zh-Hans': '\u65E0\u6CD5\u5E94\u7528\u7F16\u8F91\u3002' },

@@ -1197,11 +1197,22 @@ export class BrowserView extends Disposable {
 			if (!result || typeof result !== 'object') {
 				return null;
 			}
-			const payload = result as { domPath?: unknown; replaceOuterHtml?: unknown };
-			if (typeof payload.domPath !== 'string' || typeof payload.replaceOuterHtml !== 'string') {
+			const payload = result as { patches?: unknown };
+			if (!Array.isArray(payload.patches) || payload.patches.length === 0) {
 				return null;
 			}
-			return { domPath: payload.domPath, replaceOuterHtml: payload.replaceOuterHtml };
+			const patches: IHtmlLayoutSavePayload['patches'][number][] = [];
+			for (const entry of payload.patches) {
+				if (!entry || typeof entry !== 'object') {
+					return null;
+				}
+				const patch = entry as { domPath?: unknown; replaceOuterHtml?: unknown };
+				if (typeof patch.domPath !== 'string' || typeof patch.replaceOuterHtml !== 'string') {
+					return null;
+				}
+				patches.push({ domPath: patch.domPath, replaceOuterHtml: patch.replaceOuterHtml });
+			}
+			return { patches };
 		} catch {
 			return null;
 		}

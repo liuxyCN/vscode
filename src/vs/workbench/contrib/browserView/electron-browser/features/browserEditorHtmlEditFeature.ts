@@ -389,7 +389,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 		this._register(this._cancelButton.onDidClick(() => void this._cancelEditMode()));
 		commitActions.appendChild(this._cancelButton.element);
 		this._saveButton = this._register(new Button(commitActions, { ...defaultButtonStyles, supportIcons: true }));
-		this._saveButton.label = browserViewLabel('htmlEditSave', 'Save to File');
+		this._saveButton.label = browserViewLabel('htmlEditSave', 'Save');
 		this._register(this._saveButton.onDidClick(() => void this._saveDraft()));
 		commitActions.appendChild(this._saveButton.element);
 		this._panel.appendChild(actions);

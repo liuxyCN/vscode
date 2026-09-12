@@ -146,9 +146,13 @@ export interface IBrowserHtmlEditTextCommit {
 	readonly value: string;
 }
 
-export interface IHtmlLayoutSavePayload {
+export interface IHtmlLayoutSavePatch {
 	readonly domPath: string;
 	readonly replaceOuterHtml: string;
+}
+
+export interface IHtmlLayoutSavePayload {
+	readonly patches: readonly IHtmlLayoutSavePatch[];
 }
 
 export interface IBrowserViewRect {
@@ -841,7 +845,8 @@ export interface IBrowserViewService {
 	toggleEditMode(id: string, enabled?: boolean): Promise<void>;
 
 	/**
-	 * Toggle in-page grid layout edit mode (gap resize and card insert) for DC grid containers.
+	 * Toggle in-page layout edit mode: grid gap resize and card insert for `[data-dc-grid]`
+	 * containers, plus column-width resize for regular HTML tables (no colspan).
 	 */
 	setHtmlLayoutMode(id: string, active: boolean): Promise<void>;
 

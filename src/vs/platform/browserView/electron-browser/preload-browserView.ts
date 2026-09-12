@@ -1045,6 +1045,7 @@ const HTML_LAYOUT_EDIT_OUTLINE_BLUE = '#0078d4';
 const HTML_LAYOUT_EDIT_OUTLINE_ORANGE = '#ca5010';
 const HTML_LAYOUT_EDIT_OUTLINE_SELECTED = '#0078d4';
 const HTML_LAYOUT_SELECT_DRAG_THRESHOLD_SQ = 16;
+const HTML_LAYOUT_TABLE_COLUMN_DRAG_THRESHOLD_SQ = 1;
 // VS Code Codicons trash (16×16)
 const HTML_LAYOUT_TRASH_ICON_PATH = 'M14 2H10C10 0.897 9.103 0 8 0C6.897 0 6 0.897 6 2H2C1.724 2 1.5 2.224 1.5 2.5C1.5 2.776 1.724 3 2 3H2.54L3.349 12.708C3.456 13.994 4.55 15 5.84 15H10.159C11.449 15 12.543 13.993 12.65 12.708L13.459 3H13.999C14.275 3 14.499 2.776 14.499 2.5C14.499 2.224 14.275 2 13.999 2H14ZM8 1C8.551 1 9 1.449 9 2H7C7 1.449 7.449 1 8 1ZM11.655 12.625C11.591 13.396 10.934 14 10.16 14H5.841C5.067 14 4.41 13.396 4.346 12.625L3.544 3H12.458L11.656 12.625H11.655ZM7 5.5V11.5C7 11.776 6.776 12 6.5 12C6.224 12 6 11.776 6 11.5V5.5C6 5.224 6.224 5 6.5 5C6.776 5 7 5.224 7 5.5ZM10 5.5V11.5C10 11.776 9.776 12 9.5 12C9.224 12 9 11.776 9 11.5V5.5C9 5.224 9.224 5 9.5 5C9.776 5 10 5.224 10 5.5Z';
 interface IHtmlLayoutGapHit {
@@ -1088,12 +1089,32 @@ interface IHtmlLayoutContainerSnapshot {
 	readonly childOrder: readonly Element[];
 }
 
-interface IHtmlLayoutSavePayload {
+interface IHtmlLayoutSavePatch {
 	readonly domPath: string;
 	readonly replaceOuterHtml: string;
 }
 
-type HtmlLayoutDragKind = 'resize' | 'insert';
+interface IHtmlLayoutSavePayload {
+	readonly patches: readonly IHtmlLayoutSavePatch[];
+}
+
+type HtmlLayoutDragKind = 'resize' | 'insert' | 'tableColumnResize';
+
+interface IHtmlLayoutTableColumnHit {
+	readonly table: HTMLElement;
+	readonly boundaryIndex: number;
+}
+
+interface IHtmlLayoutTableColumnGrid {
+	readonly columnCount: number;
+	readonly resizableBoundaries: readonly boolean[];
+}
+
+interface IHtmlLayoutTableSnapshot {
+	readonly tableStyle: string;
+	readonly colgroupOuterHtml: string | null;
+	readonly firstRowCellStyles: readonly string[];
+}
 
 interface IHtmlLayoutDragState {
 	readonly kind: HtmlLayoutDragKind;
@@ -1104,7 +1125,13 @@ interface IHtmlLayoutDragState {
 	readonly startSizes?: readonly number[];
 	readonly startTrackTotalPx?: number;
 	readonly card?: HTMLElement;
+	readonly tableColumn?: IHtmlLayoutTableColumnHit;
+	readonly startTableColumnWidths?: readonly number[];
+	readonly startTableWidth?: number;
+	readonly tablePrepared?: boolean;
 }
+
+const HTML_LAYOUT_TABLE_MIN_COL_WIDTH_PX = 24;
 
 function htmlLayoutDeckCanvasScale(): number {
 	const deck = document.querySelector('deck-stage');
@@ -2184,6 +2211,432 @@ function htmlLayoutStripRuntimeAttributes(root: Element): void {
 	}
 }
 
+function htmlLayoutIsTableElement(element: Element | null | undefined): element is HTMLElement {
+	if (!(element instanceof HTMLElement)) {
+		return false;
+	}
+	const tag = element.tagName.toLowerCase();
+	return tag === 'table' || tag === 'sc-raw-table';
+}
+
+function htmlLayoutTableRows(table: HTMLElement): HTMLTableRowElement[] {
+	if (table instanceof HTMLTableElement) {
+		return [...table.rows];
+	}
+	return [...table.querySelectorAll('tr')].filter((row): row is HTMLTableRowElement => row instanceof HTMLTableRowElement);
+}
+
+function htmlLayoutBuildTableCellGrid(table: HTMLElement): { readonly columnCount: number; readonly cellGrid: HTMLTableCellElement[][] } | null {
+	const rows = htmlLayoutTableRows(table);
+	if (rows.length === 0) {
+		return null;
+	}
+
+	const cellGrid: HTMLTableCellElement[][] = [];
+	let columnCount = 0;
+
+	for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+		const row = rows[rowIndex]!;
+		if (!cellGrid[rowIndex]) {
+			cellGrid[rowIndex] = [];
+		}
+		let colIndex = 0;
+		for (const cell of [...row.cells]) {
+			while (cellGrid[rowIndex]![colIndex]) {
+				colIndex++;
+			}
+			const colspan = cell.colSpan || 1;
+			const rowspan = cell.rowSpan || 1;
+			for (let rowOffset = 0; rowOffset < rowspan; rowOffset++) {
+				for (let colOffset = 0; colOffset < colspan; colOffset++) {
+					const targetRow = rowIndex + rowOffset;
+					const targetCol = colIndex + colOffset;
+					if (!cellGrid[targetRow]) {
+						cellGrid[targetRow] = [];
+					}
+					cellGrid[targetRow]![targetCol] = cell;
+				}
+			}
+			colIndex += colspan;
+		}
+		columnCount = Math.max(columnCount, colIndex);
+	}
+
+	if (columnCount < 2) {
+		return null;
+	}
+
+	for (const row of cellGrid) {
+		if (row.length !== columnCount) {
+			return null;
+		}
+		for (let col = 0; col < columnCount; col++) {
+			if (!row[col]) {
+				return null;
+			}
+		}
+	}
+
+	return { columnCount, cellGrid };
+}
+
+function htmlLayoutBuildTableColumnGrid(table: HTMLElement): IHtmlLayoutTableColumnGrid | null {
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return null;
+	}
+	const { columnCount, cellGrid } = built;
+	const resizableBoundaries: boolean[] = [];
+	for (let boundary = 0; boundary < columnCount - 1; boundary++) {
+		let resizable = true;
+		for (const row of cellGrid) {
+			if (row[boundary] === row[boundary + 1]) {
+				resizable = false;
+				break;
+			}
+		}
+		resizableBoundaries.push(resizable);
+	}
+	if (!resizableBoundaries.some(Boolean)) {
+		return null;
+	}
+	return { columnCount, resizableBoundaries };
+}
+
+function htmlLayoutEnsureTableLayoutFixed(table: HTMLElement): void {
+	table.style.tableLayout = 'fixed';
+}
+
+function htmlLayoutMeasureTableColumnWidthsFromCells(cellGrid: readonly (readonly HTMLTableCellElement[])[], columnCount: number): number[] {
+	const widths = new Array<number>(columnCount).fill(0);
+	for (let col = 0; col < columnCount; col++) {
+		for (const row of cellGrid) {
+			const cell = row[col]!;
+			const colspan = cell.colSpan || 1;
+			const perColumn = cell.getBoundingClientRect().width / colspan;
+			widths[col] = Math.max(widths[col] ?? 0, perColumn);
+		}
+	}
+	return widths;
+}
+
+function htmlLayoutTableColumnTotalPx(table: HTMLElement, widthsPx: readonly number[]): number {
+	const rectWidth = table.getBoundingClientRect().width;
+	if (rectWidth > 0) {
+		return rectWidth;
+	}
+	const sum = widthsPx.reduce((acc, size) => acc + size, 0);
+	return sum > 0 ? sum : 0;
+}
+
+function htmlLayoutParseColWidthToPx(widthValue: string, tableWidth: number): number | null {
+	const trimmed = widthValue.trim();
+	if (!trimmed) {
+		return null;
+	}
+	if (trimmed.endsWith('%')) {
+		const percent = parseFloat(trimmed);
+		if (Number.isNaN(percent) || percent <= 0 || tableWidth <= 0) {
+			return null;
+		}
+		return tableWidth * percent / 100;
+	}
+	const px = parseFloat(trimmed);
+	return Number.isNaN(px) || px <= 0 ? null : px;
+}
+
+function htmlLayoutEnsureColgroupStructure(table: HTMLElement, columnCount: number): HTMLTableColElement[] {
+	let colgroup = table.querySelector('colgroup');
+	if (!colgroup) {
+		colgroup = document.createElement('colgroup');
+		table.insertBefore(colgroup, table.firstChild);
+	}
+	while (colgroup.children.length < columnCount) {
+		colgroup.appendChild(document.createElement('col'));
+	}
+	while (colgroup.children.length > columnCount) {
+		colgroup.lastElementChild?.remove();
+	}
+	return [...colgroup.children].filter((col): col is HTMLTableColElement => col instanceof HTMLTableColElement);
+}
+
+function htmlLayoutReadTableColumnWidthsFromColgroup(table: HTMLElement): number[] | null {
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return null;
+	}
+	const cols = htmlLayoutEnsureColgroupStructure(table, built.columnCount);
+	if (cols.length !== built.columnCount) {
+		return null;
+	}
+	const tableWidth = htmlLayoutTableColumnTotalPx(table, []);
+	const widths: number[] = [];
+	for (const col of cols) {
+		const parsed = htmlLayoutParseColWidthToPx(col.style.width, tableWidth);
+		if (parsed === null) {
+			return null;
+		}
+		widths.push(parsed);
+	}
+	return widths;
+}
+
+function htmlLayoutReadTableColumnWidthsPx(table: HTMLElement): number[] | null {
+	const fromColgroup = htmlLayoutReadTableColumnWidthsFromColgroup(table);
+	if (fromColgroup) {
+		return fromColgroup;
+	}
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return null;
+	}
+	const tableWidth = htmlLayoutTableColumnTotalPx(table, []);
+	if (tableWidth <= 0) {
+		return null;
+	}
+	return htmlLayoutMeasureTableColumnWidthsFromCells(built.cellGrid, built.columnCount);
+}
+
+function htmlLayoutInitializeTableColumnWidths(table: HTMLElement): number[] | null {
+	const grid = htmlLayoutBuildTableColumnGrid(table);
+	if (!grid) {
+		return null;
+	}
+	htmlLayoutEnsureTableLayoutFixed(table);
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return null;
+	}
+	const tableWidth = htmlLayoutTableColumnTotalPx(table, []);
+	const measured = htmlLayoutMeasureTableColumnWidthsFromCells(built.cellGrid, grid.columnCount);
+	if (tableWidth <= 0) {
+		return measured;
+	}
+	htmlLayoutWriteTableColumnWidthsPx(table, measured, tableWidth);
+	return htmlLayoutReadTableColumnWidthsPx(table);
+}
+
+function htmlLayoutPrepareTableForColumnResize(table: HTMLElement): number[] | null {
+	const grid = htmlLayoutBuildTableColumnGrid(table);
+	if (!grid) {
+		return null;
+	}
+	htmlLayoutEnsureTableLayoutFixed(table);
+	htmlLayoutEnsureColgroupStructure(table, grid.columnCount);
+	return htmlLayoutReadTableColumnWidthsPx(table) ?? htmlLayoutInitializeTableColumnWidths(table);
+}
+
+function htmlLayoutWriteTableColumnWidthsPx(table: HTMLElement, widthsPx: readonly number[], totalPx?: number): void {
+	const grid = htmlLayoutBuildTableColumnGrid(table);
+	if (!grid) {
+		return;
+	}
+	htmlLayoutEnsureTableLayoutFixed(table);
+	const cols = htmlLayoutEnsureColgroupStructure(table, grid.columnCount);
+	if (cols.length !== grid.columnCount) {
+		return;
+	}
+	const min = HTML_LAYOUT_TABLE_MIN_COL_WIDTH_PX;
+	const sizes = widthsPx.map(width => Math.max(min, Math.round(width)));
+	if (sizes.length === 0) {
+		return;
+	}
+	const total = totalPx ?? htmlLayoutTableColumnTotalPx(table, sizes);
+	if (total > 0) {
+		sizes[sizes.length - 1] = Math.max(min, total - sizes.slice(0, -1).reduce((sum, size) => sum + size, 0));
+	}
+	for (let index = 0; index < grid.columnCount; index++) {
+		cols[index]!.style.width = `${sizes[index] ?? min}px`;
+	}
+	htmlLayoutSyncTableColumnWidthsToFirstRow(table, sizes);
+}
+
+function htmlLayoutApplyTableColumnWidths(table: HTMLElement, widthsPx: readonly number[], totalPx?: number): void {
+	htmlLayoutWriteTableColumnWidthsPx(table, widthsPx, totalPx);
+}
+
+function htmlLayoutSyncTableColumnWidthsToFirstRow(table: HTMLElement, widthsPx: readonly number[]): void {
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return;
+	}
+	for (let col = 0; col < built.columnCount; col++) {
+		const cell = built.cellGrid[0]![col]!;
+		if ((cell.colSpan || 1) !== 1) {
+			continue;
+		}
+		cell.style.width = `${Math.round(widthsPx[col] ?? 0)}px`;
+	}
+}
+
+function htmlLayoutFirstRowCellStyleSnapshot(table: HTMLElement): string[] {
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return [];
+	}
+	const styles: string[] = [];
+	for (let col = 0; col < built.columnCount; col++) {
+		const cell = built.cellGrid[0]![col]!;
+		styles.push(cell.getAttribute('style') ?? '');
+	}
+	return styles;
+}
+
+function htmlLayoutNormalizeColWidthsToPxForSave(table: HTMLElement): void {
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (!built) {
+		return;
+	}
+	const cols = htmlLayoutEnsureColgroupStructure(table, built.columnCount);
+	if (cols.length !== built.columnCount) {
+		return;
+	}
+	const tableWidth = htmlLayoutTableColumnTotalPx(table, []);
+	const pxWidths: number[] = [];
+	for (const col of cols) {
+		const px = htmlLayoutParseColWidthToPx(col.style.width, tableWidth);
+		if (px === null) {
+			return;
+		}
+		pxWidths.push(px);
+	}
+	const total = tableWidth > 0 ? tableWidth : pxWidths.reduce((sum, width) => sum + width, 0);
+	if (total <= 0) {
+		return;
+	}
+	htmlLayoutWriteTableColumnWidthsPx(table, pxWidths, total);
+}
+
+function htmlLayoutFinalizeTableForSave(table: HTMLElement): void {
+	htmlLayoutEnsureTableLayoutFixed(table);
+	htmlLayoutNormalizeColWidthsToPxForSave(table);
+}
+
+function htmlLayoutListTableElements(root: HTMLElement): HTMLElement[] {
+	const tag = root.tagName.toLowerCase();
+	if (tag === 'table' || tag === 'sc-raw-table') {
+		return [root];
+	}
+	return [...root.querySelectorAll('table, sc-raw-table')].filter((table): table is HTMLElement => {
+		return table instanceof HTMLElement && htmlLayoutIsTableElement(table);
+	});
+}
+
+function htmlLayoutCloneForSave(element: HTMLElement): HTMLElement {
+	const clone = element.cloneNode(true) as HTMLElement;
+	htmlLayoutStripRuntimeAttributes(clone);
+	for (const table of htmlLayoutListTableElements(clone)) {
+		htmlLayoutFinalizeTableForSave(table);
+	}
+	return clone;
+}
+
+function htmlLayoutSnapshotTable(table: HTMLElement): IHtmlLayoutTableSnapshot {
+	const colgroup = table.querySelector('colgroup');
+	return {
+		tableStyle: table.getAttribute('style') ?? '',
+		colgroupOuterHtml: colgroup ? colgroup.outerHTML : null,
+		firstRowCellStyles: htmlLayoutFirstRowCellStyleSnapshot(table),
+	};
+}
+
+function htmlLayoutRestoreTable(table: HTMLElement, snapshot: IHtmlLayoutTableSnapshot): void {
+	if (snapshot.tableStyle) {
+		table.setAttribute('style', snapshot.tableStyle);
+	} else {
+		table.removeAttribute('style');
+	}
+	table.querySelector('colgroup')?.remove();
+	if (snapshot.colgroupOuterHtml) {
+		const template = document.createElement('template');
+		template.innerHTML = snapshot.colgroupOuterHtml;
+		const colgroup = template.content.firstElementChild;
+		if (colgroup) {
+			table.insertBefore(colgroup, table.firstChild);
+		}
+	}
+	const built = htmlLayoutBuildTableCellGrid(table);
+	if (built) {
+		for (let col = 0; col < built.columnCount; col++) {
+			const cell = built.cellGrid[0]![col]!;
+			const style = snapshot.firstRowCellStyles[col] ?? '';
+			if (style) {
+				cell.setAttribute('style', style);
+			} else {
+				cell.removeAttribute('style');
+			}
+		}
+	}
+}
+
+function htmlLayoutTableSnapshotsEqual(left: IHtmlLayoutTableSnapshot, right: IHtmlLayoutTableSnapshot): boolean {
+	if (left.tableStyle !== right.tableStyle || left.colgroupOuterHtml !== right.colgroupOuterHtml) {
+		return false;
+	}
+	if (left.firstRowCellStyles.length !== right.firstRowCellStyles.length) {
+		return false;
+	}
+	for (let index = 0; index < left.firstRowCellStyles.length; index++) {
+		if (left.firstRowCellStyles[index] !== right.firstRowCellStyles[index]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function htmlLayoutFindTableAt(clientX: number, clientY: number): HTMLElement | null {
+	for (let node = htmlLayoutElementFromPoint(clientX, clientY); node; node = node.parentElement) {
+		if (htmlLayoutIsTableElement(node)) {
+			return node;
+		}
+	}
+	return null;
+}
+
+function htmlLayoutHitTestTableColumnBoundary(clientX: number, clientY: number): IHtmlLayoutTableColumnHit | null {
+	const table = htmlLayoutFindTableAt(clientX, clientY);
+	if (!table) {
+		return null;
+	}
+	const tableRect = table.getBoundingClientRect();
+	if (clientY < tableRect.top || clientY > tableRect.bottom || clientX < tableRect.left || clientX > tableRect.right) {
+		return null;
+	}
+	const grid = htmlLayoutBuildTableColumnGrid(table);
+	if (!grid) {
+		return null;
+	}
+	const widths = htmlLayoutReadTableColumnWidthsPx(table);
+	if (!widths) {
+		return null;
+	}
+	const slop = htmlLayoutGapHitSlopPx();
+	let bestBoundary = -1;
+	let bestDistance = Infinity;
+	let x = tableRect.left;
+	for (let index = 0; index < grid.resizableBoundaries.length; index++) {
+		x += widths[index] ?? 0;
+		if (!grid.resizableBoundaries[index]) {
+			continue;
+		}
+		const distance = Math.abs(clientX - x);
+		if (distance <= slop && distance < bestDistance) {
+			bestDistance = distance;
+			bestBoundary = index;
+		}
+	}
+	if (bestBoundary < 0) {
+		return null;
+	}
+	return { table, boundaryIndex: bestBoundary };
+}
+
+function htmlLayoutListResizableTables(root: ParentNode): HTMLElement[] {
+	return [...root.querySelectorAll('table, sc-raw-table')].filter((element): element is HTMLElement => {
+		return element instanceof HTMLElement && htmlLayoutIsTableElement(element) && !!htmlLayoutBuildTableColumnGrid(element);
+	});
+}
+
 interface IHtmlLayoutEditBridgeCallbacks {
 	readonly onSave: () => void;
 	readonly onCancel: () => void;
@@ -2203,6 +2656,7 @@ class HtmlLayoutEditBridge {
 	private _selectionSyncListenersAttached = false;
 	private _theme: IBrowserViewTheme | undefined;
 	private _snapshots = new Map<HTMLElement, IHtmlLayoutContainerSnapshot>();
+	private _tableSnapshots = new Map<HTMLElement, IHtmlLayoutTableSnapshot>();
 	private _drag: IHtmlLayoutDragState | undefined;
 	private _outlineTargets = new Set<HTMLElement>();
 
@@ -2255,12 +2709,16 @@ class HtmlLayoutEditBridge {
 			this._pageStyle?.remove();
 			this._pageStyle = undefined;
 			this._snapshots.clear();
+			this._tableSnapshots.clear();
 		}
 	}
 
 	restoreDefaults(): void {
 		for (const [container, snapshot] of this._snapshots) {
 			htmlLayoutRestoreContainer(container, snapshot);
+		}
+		for (const [table, snapshot] of this._tableSnapshots) {
+			htmlLayoutRestoreTable(table, snapshot);
 		}
 	}
 
@@ -2281,6 +2739,15 @@ class HtmlLayoutEditBridge {
 				return true;
 			}
 		}
+		for (const table of htmlLayoutListResizableTables(root)) {
+			const snapshot = this._tableSnapshots.get(table);
+			if (!snapshot) {
+				return true;
+			}
+			if (!htmlLayoutTableSnapshotsEqual(snapshot, htmlLayoutSnapshotTable(table))) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -2288,17 +2755,45 @@ class HtmlLayoutEditBridge {
 		if (!this._active || !this.hasChanges()) {
 			return null;
 		}
-		const main = htmlLayoutSaveRoot();
-		if (!main) {
+		const patches: IHtmlLayoutSavePatch[] = [];
+		if (this._hasGridChanges()) {
+			const main = htmlLayoutSaveRoot();
+			if (main) {
+				const domPath = htmlLayoutDomPathForSaveTarget(main);
+				if (domPath) {
+					patches.push({
+						domPath,
+						replaceOuterHtml: htmlLayoutCloneForSave(main).outerHTML,
+					});
+				}
+			}
+		}
+		for (const [table, snapshot] of this._tableSnapshots) {
+			if (htmlLayoutTableSnapshotsEqual(snapshot, htmlLayoutSnapshotTable(table))) {
+				continue;
+			}
+			const domPath = htmlLayoutDomPathForSaveTarget(table);
+			if (!domPath) {
+				continue;
+			}
+			patches.push({
+				domPath,
+				replaceOuterHtml: htmlLayoutCloneForSave(table).outerHTML,
+			});
+		}
+		if (patches.length === 0) {
 			return null;
 		}
-		const domPath = htmlLayoutDomPathForSaveTarget(main);
-		if (!domPath) {
-			return null;
+		return { patches };
+	}
+
+	private _hasGridChanges(): boolean {
+		for (const [container, snapshot] of this._snapshots) {
+			if (!htmlLayoutSnapshotsEqual(snapshot, htmlLayoutSnapshotContainer(container))) {
+				return true;
+			}
 		}
-		const clone = main.cloneNode(true) as HTMLElement;
-		htmlLayoutStripRuntimeAttributes(clone);
-		return { domPath, replaceOuterHtml: clone.outerHTML };
+		return false;
 	}
 
 	handlePointerDown(event: PointerEvent): boolean {
@@ -2307,6 +2802,25 @@ class HtmlLayoutEditBridge {
 		}
 		if (this._isLayoutUiTarget(event.target)) {
 			return false;
+		}
+		const tableColumn = htmlLayoutHitTestTableColumnBoundary(event.clientX, event.clientY);
+		if (tableColumn) {
+			const widths = htmlLayoutReadTableColumnWidthsPx(tableColumn.table);
+			if (widths) {
+				this._clearSelection();
+				this._drag = {
+					kind: 'tableColumnResize',
+					pointerId: event.pointerId,
+					startX: event.clientX,
+					startY: event.clientY,
+					tableColumn,
+					startTableColumnWidths: widths,
+					startTableWidth: htmlLayoutTableColumnTotalPx(tableColumn.table, widths),
+				};
+				this._setForcedCursor('col-resize');
+				event.preventDefault();
+				return true;
+			}
 		}
 		const gap = htmlLayoutHitTestGapForResize(event.clientX, event.clientY);
 		if (gap) {
@@ -2353,6 +2867,8 @@ class HtmlLayoutEditBridge {
 			}
 			if (this._drag.kind === 'resize') {
 				this._applyResizeDrag(event);
+			} else if (this._drag.kind === 'tableColumnResize') {
+				this._applyTableColumnResizeDrag(event);
 			} else {
 				this._applyInsertDrag(event);
 			}
@@ -2360,7 +2876,10 @@ class HtmlLayoutEditBridge {
 			return true;
 		}
 		this._updateHoverCursor(event.clientX, event.clientY);
-		return !!this._drag || !!htmlLayoutHitTestGapForResize(event.clientX, event.clientY) || !!htmlLayoutFindCardAt(event.clientX, event.clientY);
+		return !!this._drag
+			|| !!htmlLayoutHitTestTableColumnBoundary(event.clientX, event.clientY)
+			|| !!htmlLayoutHitTestGapForResize(event.clientX, event.clientY)
+			|| !!htmlLayoutFindCardAt(event.clientX, event.clientY);
 	}
 
 	handlePointerUp(event: PointerEvent): boolean {
@@ -2393,6 +2912,60 @@ class HtmlLayoutEditBridge {
 		this._finishDrag();
 		this._updateHoverCursor(event.clientX, event.clientY);
 		return true;
+	}
+
+	private _applyTableColumnResizeDrag(event: PointerEvent): void {
+		let drag = this._drag;
+		if (!drag?.tableColumn || !drag.startTableColumnWidths) {
+			return;
+		}
+		const { table, boundaryIndex } = drag.tableColumn;
+		if (!drag.tablePrepared) {
+			const dx = event.clientX - drag.startX;
+			const dy = event.clientY - drag.startY;
+			if (dx * dx + dy * dy <= HTML_LAYOUT_TABLE_COLUMN_DRAG_THRESHOLD_SQ) {
+				return;
+			}
+			const prepared = htmlLayoutPrepareTableForColumnResize(table);
+			if (!prepared) {
+				return;
+			}
+			drag = {
+				...drag,
+				tablePrepared: true,
+				startTableColumnWidths: prepared,
+				startTableWidth: htmlLayoutTableColumnTotalPx(table, prepared),
+				startX: event.clientX,
+				startY: event.clientY,
+			};
+			this._drag = drag;
+			return;
+		}
+		const scale = htmlLayoutDeckCanvasScale();
+		const delta = (event.clientX - drag.startX) / scale;
+		const sizes = [...drag.startTableColumnWidths];
+		if (boundaryIndex < 0 || boundaryIndex >= sizes.length - 1) {
+			return;
+		}
+		sizes[boundaryIndex] = (sizes[boundaryIndex] ?? 0) + delta;
+		sizes[boundaryIndex + 1] = (sizes[boundaryIndex + 1] ?? 0) - delta;
+		const min = HTML_LAYOUT_TABLE_MIN_COL_WIDTH_PX;
+		for (let pass = 0; pass < 2; pass++) {
+			for (let index = 0; index < sizes.length; index++) {
+				if ((sizes[index] ?? 0) >= min) {
+					continue;
+				}
+				const overflow = min - (sizes[index] ?? 0);
+				sizes[index] = min;
+				const neighbor = index < sizes.length - 1 ? index + 1 : index - 1;
+				if (neighbor >= 0) {
+					sizes[neighbor] = (sizes[neighbor] ?? 0) - overflow;
+				}
+			}
+		}
+		const total = drag.startTableWidth ?? htmlLayoutTableColumnTotalPx(table, sizes);
+		htmlLayoutAnchorFarTrack(sizes, total, new Array<number>(sizes.length).fill(min));
+		htmlLayoutApplyTableColumnWidths(table, sizes, total);
 	}
 
 	private _applyResizeDrag(event: PointerEvent): void {
@@ -2646,6 +3219,10 @@ class HtmlLayoutEditBridge {
 		if (this._drag) {
 			return;
 		}
+		if (htmlLayoutHitTestTableColumnBoundary(clientX, clientY)) {
+			this._setForcedCursor('col-resize');
+			return;
+		}
 		const gap = htmlLayoutHitTestGapForResize(clientX, clientY);
 		if (gap) {
 			this._setForcedCursor(gap.axis === 'column' ? 'col-resize' : 'row-resize');
@@ -2695,11 +3272,15 @@ class HtmlLayoutEditBridge {
 
 	private _captureSnapshots(): void {
 		this._snapshots.clear();
+		this._tableSnapshots.clear();
 		const root = htmlLayoutActiveSlideRoot();
 		for (const container of root.querySelectorAll('[data-dc-grid]')) {
 			if (container instanceof HTMLElement) {
 				this._captureContainer(container);
 			}
+		}
+		for (const table of htmlLayoutListResizableTables(root)) {
+			this._tableSnapshots.set(table, htmlLayoutSnapshotTable(table));
 		}
 	}
 
@@ -2727,6 +3308,11 @@ class HtmlLayoutEditBridge {
 			}
 			html[data-vscode-layout-edit] [data-dc-grid] > * {
 				outline: 1px dashed color-mix(in srgb, #0078d4 55%, transparent) !important;
+				outline-offset: -1px;
+			}
+			html[data-vscode-layout-edit] table,
+			html[data-vscode-layout-edit] sc-raw-table {
+				outline: 1px dashed color-mix(in srgb, #0078d4 35%, transparent) !important;
 				outline-offset: -1px;
 			}
 			#vscode-html-layout-action-bar {
