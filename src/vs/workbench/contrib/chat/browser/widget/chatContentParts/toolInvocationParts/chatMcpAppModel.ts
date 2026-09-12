@@ -32,6 +32,7 @@ import { McpResourceURI } from '../../../../../mcp/common/mcpTypes.js';
 import { MCP } from '../../../../../mcp/common/modelContextProtocol.js';
 import { McpApps } from '../../../../../mcp/common/modelContextProtocolApps.js';
 import { IWebviewElement, IWebviewService, WebviewContentPurpose, WebviewOriginStore } from '../../../../../webview/browser/webview.js';
+import { WebviewWindowDragMonitor } from '../../../../../webview/browser/webviewWindowDragMonitor.js';
 import { IChatRequestVariableEntry } from '../../../../common/attachments/chatVariableEntries.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized } from '../../../../common/chatService/chatService.js';
 import { isToolResultInputOutputDetails, IToolResult } from '../../../../common/tools/languageModelToolsService.js';
@@ -138,6 +139,7 @@ export class ChatMcpAppModel extends Disposable {
 				enableFindWidget: false,
 				disableServiceWorker: true,
 				retainContextWhenHidden: true,
+				acceptsFileDrops: true,
 			},
 			contentOptions: {
 				allowMultipleAPIAcquire: true,
@@ -150,6 +152,7 @@ export class ChatMcpAppModel extends Disposable {
 		// Mount the webview to the container
 		const targetWindow = dom.getWindow(this._container);
 		this._webview.mountTo(this._container, targetWindow);
+		this._register(new WebviewWindowDragMonitor(targetWindow, () => this._webview));
 
 		// Build host context observable
 		this.hostContext = this._mcpToolCallUI.hostContext.map((context, reader) => ({

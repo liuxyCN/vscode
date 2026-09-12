@@ -104,6 +104,14 @@ export interface WebviewOptions {
 
 	readonly tryRestoreScrollPosition?: boolean;
 	readonly retainContextWhenHidden?: boolean;
+
+	/**
+	 * When true, file drag-and-drop is delivered to this webview without requiring Shift.
+	 * Other webviews keep the default behavior where Shift is needed to drop into the webview
+	 * instead of the editor underneath.
+	 */
+	readonly acceptsFileDrops?: boolean;
+
 	transformCssVariables?(styles: WebviewStyles): WebviewStyles;
 }
 
@@ -191,6 +199,8 @@ export interface WebviewMessageReceivedEvent {
 }
 
 export interface IWebview extends IDisposable {
+
+	readonly options: WebviewOptions;
 
 	/**
 	 * The original view type of the webview.

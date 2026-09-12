@@ -6,6 +6,9 @@
 // THIS IS A GENERATED FILE. DO NOT EDIT DIRECTLY.
 
 const _allApiProposals = {
+	acceptsFileDrops: {
+		proposal: 'https://raw.githubusercontent.com/microsoft/vscode/main/src/vscode-dts/vscode.proposed.acceptsFileDrops.d.ts',
+	},
 	activeComment: {
 		proposal: 'https://raw.githubusercontent.com/microsoft/vscode/main/src/vscode-dts/vscode.proposed.activeComment.d.ts',
 	},

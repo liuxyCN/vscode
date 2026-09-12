@@ -56,7 +56,7 @@ export class MainThreadWebviewsViews extends Disposable implements extHostProtoc
 	public $registerWebviewViewProvider(
 		extensionData: extHostProtocol.WebviewExtensionDescription,
 		viewType: string,
-		options: { retainContextWhenHidden?: boolean; serializeBuffersForPostMessage: boolean }
+		options: { retainContextWhenHidden?: boolean; acceptsFileDrops?: boolean; serializeBuffersForPostMessage: boolean }
 	): void {
 		if (this._webviewViewProviders.has(viewType)) {
 			throw new Error(`View provider for ${viewType} already registered`);
@@ -83,7 +83,10 @@ export class MainThreadWebviewsViews extends Disposable implements extHostProtoc
 				webviewView.webview.extension = extension;
 
 				if (options) {
-					webviewView.webview.options = options;
+					webviewView.webview.options = {
+						retainContextWhenHidden: options.retainContextWhenHidden,
+						acceptsFileDrops: options.acceptsFileDrops,
+					};
 				}
 
 				const subscriptions = new DisposableStore();

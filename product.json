@@ -159,7 +159,7 @@
 		]
 	},
 	"extensionEnabledApiProposals": {
-		"NeonTractorInc.neontractor-ai": ["browser", "textDocumentChangeReason"]
+		"NeonTractorInc.neontractor-ai": ["browser", "textDocumentChangeReason", "acceptsFileDrops"]
 	},
 	"onboardingKeymaps": [
 		{

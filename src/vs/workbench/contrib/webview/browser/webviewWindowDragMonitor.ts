@@ -8,6 +8,10 @@ import { CodeWindow } from '../../../../base/browser/window.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IWebview } from './webview.js';
 
+export function shouldAllowWebviewFileDrop(event: Pick<DragEvent, 'shiftKey'>, webview: IWebview | undefined): boolean {
+	return event.shiftKey || !!webview?.options.acceptsFileDrops;
+}
+
 /**
  * Allows webviews to monitor when an element in the VS Code editor is being dragged/dropped.
  *
@@ -26,6 +30,14 @@ export class WebviewWindowDragMonitor extends Disposable {
 			getWebview()?.windowDidDragEnd();
 		};
 
+		const updateDragState = (event: DragEvent) => {
+			if (shouldAllowWebviewFileDrop(event, getWebview())) {
+				onDragEnd();
+			} else {
+				onDragStart();
+			}
+		};
+
 		this._register(DOM.addDisposableListener(targetWindow, DOM.EventType.DRAG_START, () => {
 			onDragStart();
 		}));
@@ -38,21 +50,9 @@ export class WebviewWindowDragMonitor extends Disposable {
 			}
 		}));
 
-		this._register(DOM.addDisposableListener(targetWindow, DOM.EventType.DRAG, (event) => {
-			if (event.shiftKey) {
-				onDragEnd();
-			} else {
-				onDragStart();
-			}
-		}));
+		this._register(DOM.addDisposableListener(targetWindow, DOM.EventType.DRAG, updateDragState));
 
-		this._register(DOM.addDisposableListener(targetWindow, DOM.EventType.DRAG_OVER, (event) => {
-			if (event.shiftKey) {
-				onDragEnd();
-			} else {
-				onDragStart();
-			}
-		}));
+		this._register(DOM.addDisposableListener(targetWindow, DOM.EventType.DRAG_OVER, updateDragState));
 
 	}
 }

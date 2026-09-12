@@ -7,6 +7,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
+import { isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { ExtHostWebview, ExtHostWebviews, toExtensionData, shouldSerializeBuffersForPostMessage } from './extHostWebview.js';
 import { ViewBadge } from './extHostTypeConverters.js';
 import type * as vscode from 'vscode';
@@ -158,6 +159,7 @@ export class ExtHostWebviewViews implements extHostProtocol.ExtHostWebviewViewsS
 		provider: vscode.WebviewViewProvider,
 		webviewOptions?: {
 			retainContextWhenHidden?: boolean;
+			acceptsFileDrops?: boolean;
 		},
 	): vscode.Disposable {
 		if (this._viewProviders.has(viewType)) {
@@ -167,6 +169,7 @@ export class ExtHostWebviewViews implements extHostProtocol.ExtHostWebviewViewsS
 		this._viewProviders.set(viewType, { provider, extension });
 		this._proxy.$registerWebviewViewProvider(toExtensionData(extension), viewType, {
 			retainContextWhenHidden: webviewOptions?.retainContextWhenHidden,
+			acceptsFileDrops: isProposedApiEnabled(extension, 'acceptsFileDrops') ? webviewOptions?.acceptsFileDrops : undefined,
 			serializeBuffersForPostMessage: shouldSerializeBuffersForPostMessage(extension),
 		});
 

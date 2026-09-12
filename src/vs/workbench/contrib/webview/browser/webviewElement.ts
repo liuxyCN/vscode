@@ -164,6 +164,10 @@ export class WebviewElement extends Disposable implements IWebviewElement, Webvi
 	public extension: WebviewExtensionDescription | undefined;
 	private readonly _options: WebviewOptions;
 
+	public get options(): WebviewOptions {
+		return this._options;
+	}
+
 	constructor(
 		initInfo: WebviewInitInfo,
 		protected readonly webviewThemeDataProvider: WebviewThemeDataProvider,

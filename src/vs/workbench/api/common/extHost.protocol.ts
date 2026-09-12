@@ -1043,6 +1043,7 @@ export interface IWebviewContentOptions {
 export interface IWebviewPanelOptions {
 	readonly enableFindWidget?: boolean;
 	readonly retainContextWhenHidden?: boolean;
+	readonly acceptsFileDrops?: boolean;
 }
 
 export interface CustomEditorProviderCapabilities {
@@ -1142,7 +1143,7 @@ export interface MainThreadCustomEditorsShape extends IDisposable {
 }
 
 export interface MainThreadWebviewViewsShape extends IDisposable {
-	$registerWebviewViewProvider(extension: WebviewExtensionDescription, viewType: string, options: { retainContextWhenHidden?: boolean; serializeBuffersForPostMessage: boolean }): void;
+	$registerWebviewViewProvider(extension: WebviewExtensionDescription, viewType: string, options: { retainContextWhenHidden?: boolean; acceptsFileDrops?: boolean; serializeBuffersForPostMessage: boolean }): void;
 	$unregisterWebviewViewProvider(viewType: string): void;
 
 	$setWebviewViewTitle(handle: WebviewHandle, value: string | undefined): void;
