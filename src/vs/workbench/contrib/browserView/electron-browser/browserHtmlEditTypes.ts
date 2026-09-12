@@ -943,4 +943,6 @@ export interface IBrowserHtmlPatch {
 	readonly alt?: string;
 	readonly styles?: Partial<BrowserHtmlEditStyles>;
 	readonly removeElement?: boolean;
+	/** Replace the targeted element with parsed HTML (layout mode save). */
+	readonly replaceOuterHtml?: string;
 }

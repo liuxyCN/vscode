@@ -6,6 +6,7 @@
 import { $, addDisposableListener, isHTMLInputElement } from '../../../../../base/browser/dom.js';
 import { getFonts } from '../../../../../base/browser/fonts.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ISashEvent, Orientation, Sash } from '../../../../../base/browser/ui/sash/sash.js';
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
@@ -149,6 +150,7 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	private _fontFamilySelect: HTMLSelectElement | undefined;
 	private _systemFontsLoaded = false;
 	private readonly _selector: HTMLElement;
+	private readonly _cancelButton: Button;
 	private readonly _saveButton: Button;
 	private readonly _undoButton: Button;
 	private readonly _redoButton: Button;
@@ -381,10 +383,15 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 
 		this._saveStatus = $('.browser-html-edit-save-status');
 		actions.appendChild(this._saveStatus);
-		this._saveButton = this._register(new Button(actions, { supportIcons: true }));
+		const commitActions = actions.appendChild($('.browser-html-edit-commit-actions'));
+		this._cancelButton = this._register(new Button(commitActions, { ...defaultButtonStyles, secondary: true }));
+		this._cancelButton.label = browserViewLabel('htmlEditCancel', 'Cancel');
+		this._register(this._cancelButton.onDidClick(() => void this._cancelEditMode()));
+		commitActions.appendChild(this._cancelButton.element);
+		this._saveButton = this._register(new Button(commitActions, { ...defaultButtonStyles, supportIcons: true }));
 		this._saveButton.label = browserViewLabel('htmlEditSave', 'Save to File');
 		this._register(this._saveButton.onDidClick(() => void this._saveDraft()));
-		actions.appendChild(this._saveButton.element);
+		commitActions.appendChild(this._saveButton.element);
 		this._panel.appendChild(actions);
 
 		this._wirePreviewListeners();
@@ -1400,7 +1407,34 @@ class BrowserEditorHtmlEditContribution extends BrowserEditorContribution {
 	}
 
 	private _syncSaveButton(): void {
-		this._saveButton.enabled = !this._saveInFlight;
+		const enabled = !this._saveInFlight;
+		this._cancelButton.enabled = enabled;
+		this._saveButton.enabled = enabled;
+	}
+
+	private _hasUnsavedEditChanges(): boolean {
+		const domPath = this._selected?.domPath ?? BODY_DOM_PATH;
+		const draft = this._readDraftFromInputs();
+		if (buildBrowserHtmlEditSavePatch(domPath, this._baselineDraft, draft)) {
+			return true;
+		}
+		return Object.keys(this._lastPreviewStyles).length > 0;
+	}
+
+	private async _cancelEditMode(): Promise<void> {
+		if (this._saveInFlight) {
+			return;
+		}
+		await this._populateDraftPromise;
+		const model = this.editor.model;
+		if (!model?.isEditModeActive) {
+			return;
+		}
+		const hadChanges = this._hasUnsavedEditChanges();
+		await model.toggleEditMode(false);
+		if (hadChanges) {
+			await model.reload();
+		}
 	}
 
 	private _pushHistory(source: string): void {

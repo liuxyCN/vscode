@@ -95,6 +95,12 @@ export class BrowserViewInspector extends Disposable {
 	private readonly _onDidCommitHtmlEditText = this._register(new Emitter<IBrowserHtmlEditTextCommit>());
 	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit> = this._onDidCommitHtmlEditText.event;
 
+	private readonly _onDidRequestHtmlLayoutSave = this._register(new Emitter<void>());
+	readonly onDidRequestHtmlLayoutSave: Event<void> = this._onDidRequestHtmlLayoutSave.event;
+
+	private readonly _onDidRequestHtmlLayoutCancel = this._register(new Emitter<void>());
+	readonly onDidRequestHtmlLayoutCancel: Event<void> = this._onDidRequestHtmlLayoutCancel.event;
+
 	private _editModeActive = false;
 	get isEditModeActive(): boolean { return this._editModeActive; }
 
@@ -272,6 +278,8 @@ export class BrowserViewInspector extends Disposable {
 		});
 		inspector.onDidRemoveElementComment(elementId => this._onDidRemoveElementComment.fire(elementId));
 		inspector.onDidCommitHtmlEditText(commit => this._onDidCommitHtmlEditText.fire(commit));
+		inspector.onDidRequestHtmlLayoutSave(() => this._onDidRequestHtmlLayoutSave.fire());
+		inspector.onDidRequestHtmlLayoutCancel(() => this._onDidRequestHtmlLayoutCancel.fire());
 
 		// When a frame's preload stops picking, stop all other frames too
 		inspector.onDidStopPicking(() => {

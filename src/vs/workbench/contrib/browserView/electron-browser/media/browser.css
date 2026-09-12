@@ -58,7 +58,7 @@
 		.action-item > .action-label.codicon-edit,
 		.action-item > .action-label.codicon-table,
 		.action-item > .action-label.codicon-file-pdf {
-			color: #ff9b50;
+			color: #ca5010;
 		}
 	}
 
@@ -995,6 +995,15 @@
 		background-color: var(--vscode-inputValidation-errorBackground);
 		border-color: var(--vscode-inputValidation-errorBorder);
 		color: var(--vscode-inputValidation-errorForeground);
+	}
+
+	.browser-html-edit-commit-actions {
+		display: flex;
+		gap: 8px;
+
+		.monaco-button {
+			flex: 1;
+		}
 	}
 
 	.browser-container {

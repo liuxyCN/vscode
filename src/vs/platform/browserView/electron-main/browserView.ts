@@ -7,7 +7,7 @@ import { screen, WebContentsView, webContents } from 'electron';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
-import { IBrowserViewAudience, IBrowserViewBounds, IBrowserViewDevToolsStateEvent, IBrowserViewFocusEvent, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewNavigationEvent, IBrowserViewLoadingEvent, IBrowserViewLoadError, IBrowserViewTitleChangeEvent, IBrowserViewFaviconChangeEvent, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewFindInPageResult, IBrowserViewVisibilityEvent, browserViewIsolatedWorldId, browserZoomFactors, browserZoomDefaultIndex, IBrowserViewOwner, IBrowserViewEditorOpenOptions, IBrowserViewPermissionRequestEvent, equalsBrowserViewAudience, isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience } from '../common/browserView.js';
+import { IBrowserViewAudience, IBrowserViewBounds, IBrowserViewDevToolsStateEvent, IBrowserViewFocusEvent, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewNavigationEvent, IBrowserViewLoadingEvent, IBrowserViewLoadError, IBrowserViewTitleChangeEvent, IBrowserViewFaviconChangeEvent, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewFindInPageResult, IBrowserViewVisibilityEvent, browserViewIsolatedWorldId, browserZoomFactors, browserZoomDefaultIndex, IBrowserViewOwner, IBrowserViewEditorOpenOptions, IBrowserViewPermissionRequestEvent, equalsBrowserViewAudience, isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience, IHtmlLayoutSavePayload } from '../common/browserView.js';
 import { BrowserViewEmulator } from './browserViewEmulator.js';
 import { BrowserViewInspector } from './browserViewInspector.js';
 import { IWindowsMainService } from '../../windows/electron-main/windows.js';
@@ -1183,6 +1183,54 @@ export class BrowserView extends Disposable {
 			return await this._view.webContents.executeJavaScriptInIsolatedWorld(browserViewIsolatedWorldId, [{ code: 'window.browserViewAPI?.getSelectedText?.() ?? ""' }]);
 		} catch {
 			return '';
+		}
+	}
+
+	async getHtmlLayoutSavePayload(): Promise<IHtmlLayoutSavePayload | null> {
+		if (this._view.webContents.isLoading()) {
+			return null;
+		}
+		try {
+			const result = await this._view.webContents.executeJavaScriptInIsolatedWorld(browserViewIsolatedWorldId, [{
+				code: '(()=>{try{return window.browserViewAPI?.getHtmlLayoutSavePayload?.()??null}catch(e){return null}})()',
+			}]);
+			if (!result || typeof result !== 'object') {
+				return null;
+			}
+			const payload = result as { domPath?: unknown; replaceOuterHtml?: unknown };
+			if (typeof payload.domPath !== 'string' || typeof payload.replaceOuterHtml !== 'string') {
+				return null;
+			}
+			return { domPath: payload.domPath, replaceOuterHtml: payload.replaceOuterHtml };
+		} catch {
+			return null;
+		}
+	}
+
+	async hasHtmlLayoutChanges(): Promise<boolean> {
+		if (this._view.webContents.isLoading()) {
+			return false;
+		}
+		try {
+			const result = await this._view.webContents.executeJavaScriptInIsolatedWorld(browserViewIsolatedWorldId, [{
+				code: '(()=>{try{return !!window.browserViewAPI?.hasHtmlLayoutChanges?.()}catch(e){return false}})()',
+			}]);
+			return result === true;
+		} catch {
+			return false;
+		}
+	}
+
+	async restoreHtmlLayoutDefaults(): Promise<void> {
+		if (this._view.webContents.isLoading()) {
+			return;
+		}
+		try {
+			await this._view.webContents.executeJavaScriptInIsolatedWorld(browserViewIsolatedWorldId, [{
+				code: '(()=>{try{window.browserViewAPI?.restoreHtmlLayoutDefaults?.()}catch(e){}})()',
+			}]);
+		} catch {
+			// ignore
 		}
 	}
 

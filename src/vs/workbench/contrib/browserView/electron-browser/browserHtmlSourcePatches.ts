@@ -121,6 +121,14 @@ export function serializeDcSourceElement(element: Element): string {
 	return decodeCase(clone.outerHTML);
 }
 
+export function normalizeLayoutReplaceOuterHtml(outerHtml: string, rootDocument: Document): string {
+	const doc = parseTemplateFragment(outerHtml, rootDocument);
+	if (!doc) {
+		return outerHtml;
+	}
+	return serializeTemplateFragment(doc);
+}
+
 export function readDcSourceElementAttributes(element: Element): Record<string, string> {
 	const attributes: Record<string, string> = {};
 	for (const { name, value } of [...element.attributes]) {
@@ -277,6 +285,17 @@ function resolveDcComponentName(parsed: IHtmlEditDomPath, options?: IBrowserHtml
 	return parsed.componentName ?? options?.dcComponentName;
 }
 
+function replaceElementOuterHtml(el: Element, outerHtml: string, rootDocument: Document): { ok: false; error: string } | undefined {
+	const fragmentDoc = parseTemplateFragment(outerHtml, rootDocument);
+	const replacement = fragmentDoc?.body?.firstElementChild;
+	if (!replacement) {
+		return { ok: false, error: browserViewLabel('htmlEditParseFailed', 'Could not parse HTML source.') };
+	}
+	const imported = rootDocument.importNode(replacement, true);
+	el.replaceWith(imported);
+	return undefined;
+}
+
 function applyDcTplPatch(
 	source: string,
 	patch: IBrowserHtmlPatch,
@@ -317,6 +336,11 @@ function applyDcTplPatch(
 			return { ok: false, source, error: browserViewLabel('htmlEditRemoveLast', 'Cannot remove the last rendered element in the document.') };
 		}
 		el.remove();
+	} else if (patch.replaceOuterHtml !== undefined) {
+		const replaceError = replaceElementOuterHtml(el, patch.replaceOuterHtml, rootDocument);
+		if (replaceError) {
+			return { ...replaceError, source };
+		}
 	} else {
 		const contentError = applyContentPatch(el, patch.kind, patch);
 		if (contentError) {
@@ -946,6 +970,14 @@ export function applyBrowserHtmlPatch(
 			return { ok: false, source, error: browserViewLabel('htmlEditRemoveLast', 'Cannot remove the last rendered element in the document.') };
 		}
 		el.remove();
+		return { ok: true, source: serializeSource(doc, source) };
+	}
+
+	if (patch.replaceOuterHtml !== undefined) {
+		const replaceError = replaceElementOuterHtml(el, patch.replaceOuterHtml, rootDocument);
+		if (replaceError) {
+			return { ...replaceError, source };
+		}
 		return { ok: true, source: serializeSource(doc, source) };
 	}
 

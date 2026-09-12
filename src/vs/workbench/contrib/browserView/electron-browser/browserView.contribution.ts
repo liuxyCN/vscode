@@ -41,6 +41,7 @@ import './features/browserEditorEmulationFeatures.js';
 import './features/browserAutoReloadFeatures.js';
 import './features/browserEditorFindFeature.js';
 import './features/browserEditorEditFeature.js';
+import './features/browserEditorHtmlLayoutFeature.js';
 import './features/browserEditorHtmlEditFeature.js';
 import './features/browserEditorContentFullscreenFeature.js';
 import './features/browserEditorExportPdfFeature.js';

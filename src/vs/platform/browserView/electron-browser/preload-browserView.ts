@@ -20,6 +20,9 @@ let localizedStrings: IBrowserViewPreloadLocalizedStrings = {
 	emptyElementComment: 'Empty element comment {0}',
 	removeComment: 'Remove Comment',
 	removeElementComment: 'Remove element comment',
+	htmlLayoutSave: 'Save',
+	htmlLayoutCancel: 'Cancel',
+	htmlLayoutDelete: 'Delete element',
 };
 
 /**
@@ -137,7 +140,10 @@ function init() {
 	});
 
 	const elementPickerRef: { current?: ElementPicker } = {};
-	const htmlLayoutEditBridge = new HtmlLayoutEditBridge();
+	const htmlLayoutEditBridge = new HtmlLayoutEditBridge({
+		onSave: () => ipcRenderer.send('vscode:browserView:htmlLayoutSave'),
+		onCancel: () => ipcRenderer.send('vscode:browserView:htmlLayoutCancel'),
+	});
 	const htmlEditBridge = new HtmlEditBridge(
 		payload => {
 			ipcRenderer.send('vscode:browserView:htmlEditTextCommit', payload);
@@ -237,10 +243,12 @@ function init() {
 	ipcRenderer.on('vscode:browserView:setTheme', (_event: unknown, theme: IBrowserViewTheme) => {
 		elementPicker.setTheme(theme);
 		areaPicker.setTheme(theme);
+		htmlLayoutEditBridge.setTheme(theme);
 	});
 	ipcRenderer.on('vscode:browserView:setLocalizedStrings', (_event: unknown, strings: IBrowserViewPreloadLocalizedStrings) => {
 		localizedStrings = strings;
 		elementPicker.updateLocalizedStrings();
+		htmlLayoutEditBridge.updateLocalizedStrings();
 	});
 	ipcRenderer.on('vscode:browserView:startElementPicker', (_event: unknown, options: IBrowserElementSelectionOptions) => {
 		elementPicker.start(options);
@@ -297,7 +305,16 @@ function init() {
 			} catch {
 				return '';
 			}
-		}
+		},
+		getHtmlLayoutSavePayload(): IHtmlLayoutSavePayload | null {
+			return htmlLayoutEditBridge.getSavePayload();
+		},
+		hasHtmlLayoutChanges(): boolean {
+			return htmlLayoutEditBridge.hasChanges();
+		},
+		restoreHtmlLayoutDefaults(): void {
+			htmlLayoutEditBridge.restoreDefaults();
+		},
 	};
 
 	// Generate a unique token for this frame instance. This token is used to
@@ -1026,6 +1043,10 @@ class HtmlEditBridge {
 
 const HTML_LAYOUT_EDIT_OUTLINE_BLUE = '#0078d4';
 const HTML_LAYOUT_EDIT_OUTLINE_ORANGE = '#ca5010';
+const HTML_LAYOUT_EDIT_OUTLINE_SELECTED = '#0078d4';
+const HTML_LAYOUT_SELECT_DRAG_THRESHOLD_SQ = 16;
+// VS Code Codicons trash (16×16)
+const HTML_LAYOUT_TRASH_ICON_PATH = 'M14 2H10C10 0.897 9.103 0 8 0C6.897 0 6 0.897 6 2H2C1.724 2 1.5 2.224 1.5 2.5C1.5 2.776 1.724 3 2 3H2.54L3.349 12.708C3.456 13.994 4.55 15 5.84 15H10.159C11.449 15 12.543 13.993 12.65 12.708L13.459 3H13.999C14.275 3 14.499 2.776 14.499 2.5C14.499 2.224 14.275 2 13.999 2H14ZM8 1C8.551 1 9 1.449 9 2H7C7 1.449 7.449 1 8 1ZM11.655 12.625C11.591 13.396 10.934 14 10.16 14H5.841C5.067 14 4.41 13.396 4.346 12.625L3.544 3H12.458L11.656 12.625H11.655ZM7 5.5V11.5C7 11.776 6.776 12 6.5 12C6.224 12 6 11.776 6 11.5V5.5C6 5.224 6.224 5 6.5 5C6.776 5 7 5.224 7 5.5ZM10 5.5V11.5C10 11.776 9.776 12 9.5 12C9.224 12 9 11.776 9 11.5V5.5C9 5.224 9.224 5 9.5 5C9.776 5 10 5.224 10 5.5Z';
 interface IHtmlLayoutGapHit {
 	readonly container: HTMLElement;
 	readonly axis: 'column' | 'row';
@@ -1065,6 +1086,11 @@ interface IHtmlLayoutContainerSnapshot {
 	readonly minC: string | null;
 	readonly minR: string | null;
 	readonly childOrder: readonly Element[];
+}
+
+interface IHtmlLayoutSavePayload {
+	readonly domPath: string;
+	readonly replaceOuterHtml: string;
 }
 
 type HtmlLayoutDragKind = 'resize' | 'insert';
@@ -2110,22 +2136,102 @@ function htmlLayoutRestoreContainer(container: HTMLElement, snapshot: IHtmlLayou
 	}
 }
 
+function htmlLayoutSnapshotsEqual(left: IHtmlLayoutContainerSnapshot, right: IHtmlLayoutContainerSnapshot): boolean {
+	if (left.style !== right.style || left.tplC !== right.tplC || left.tplR !== right.tplR || left.minC !== right.minC || left.minR !== right.minR) {
+		return false;
+	}
+	if (left.childOrder.length !== right.childOrder.length) {
+		return false;
+	}
+	for (let index = 0; index < left.childOrder.length; index++) {
+		if (left.childOrder[index] !== right.childOrder[index]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function htmlLayoutSaveRoot(): HTMLElement | null {
+	const root = htmlLayoutActiveSlideRoot();
+	const main = root.querySelector('main[data-dc-grid]');
+	return main instanceof HTMLElement ? main : null;
+}
+
+function htmlLayoutDomPathForSaveTarget(element: HTMLElement): string {
+	const stamped = domPathStampTarget(element);
+	const tplId = stamped?.getAttribute('data-dc-tpl') ?? element.getAttribute('data-dc-tpl');
+	if (tplId) {
+		const attrs = dcStampAttributesForElement(element);
+		if (attrs.dcComponentName) {
+			return `dc:${attrs.dcComponentName}:tpl-${tplId}`;
+		}
+		return `tpl-${tplId}`;
+	}
+	return domPathForElement(element);
+}
+
+function htmlLayoutStripRuntimeAttributes(root: Element): void {
+	root.removeAttribute('data-vscode-layout-insert-preview');
+	for (const element of root.querySelectorAll('[data-dc-tpl], [data-vscode-layout-insert-preview]')) {
+		element.removeAttribute('data-dc-tpl');
+		element.removeAttribute('data-vscode-layout-insert-preview');
+	}
+	for (const element of root.querySelectorAll('[style]')) {
+		if (element instanceof HTMLElement) {
+			element.style.removeProperty('outline');
+			element.style.removeProperty('outline-offset');
+		}
+	}
+}
+
+interface IHtmlLayoutEditBridgeCallbacks {
+	readonly onSave: () => void;
+	readonly onCancel: () => void;
+}
+
 /** Grid layout editing for DC deck slides — pointer-driven, inline-style only. */
 class HtmlLayoutEditBridge {
 	private _active = false;
 	private _pageStyle: HTMLStyleElement | undefined;
 	private _insertPreview: HTMLDivElement | undefined;
+	private _actionBar: HTMLDivElement | undefined;
+	private _cancelButton: HTMLButtonElement | undefined;
+	private _saveButton: HTMLButtonElement | undefined;
+	private _deleteToolbar: HTMLDivElement | undefined;
+	private _deleteButton: HTMLButtonElement | undefined;
+	private _selectedCard: HTMLElement | undefined;
+	private _selectionSyncListenersAttached = false;
+	private _theme: IBrowserViewTheme | undefined;
 	private _snapshots = new Map<HTMLElement, IHtmlLayoutContainerSnapshot>();
 	private _drag: IHtmlLayoutDragState | undefined;
 	private _outlineTargets = new Set<HTMLElement>();
 
-	constructor() {
+	constructor(private readonly _callbacks: IHtmlLayoutEditBridgeCallbacks) {
 		window.addEventListener('beforeprint', () => {
 			if (this._active) {
 				this.restoreDefaults();
 				this.setActive(false);
 			}
 		});
+	}
+
+	setTheme(theme: IBrowserViewTheme): void {
+		this._theme = theme;
+		this._applyActionBarTheme();
+		this._applyDeleteToolbarTheme();
+	}
+
+	updateLocalizedStrings(): void {
+		if (this._cancelButton) {
+			this._cancelButton.textContent = localizedStrings.htmlLayoutCancel;
+		}
+		if (this._saveButton) {
+			this._saveButton.textContent = localizedStrings.htmlLayoutSave;
+		}
+		if (this._deleteButton) {
+			this._deleteButton.title = localizedStrings.htmlLayoutDelete;
+			this._deleteButton.setAttribute('aria-label', localizedStrings.htmlLayoutDelete);
+		}
 	}
 
 	setActive(active: boolean): void {
@@ -2136,11 +2242,15 @@ class HtmlLayoutEditBridge {
 		if (active) {
 			this._captureSnapshots();
 			this._ensurePageStyles();
+			this._ensureActionBar();
 			document.documentElement.setAttribute('data-vscode-layout-edit', 'true');
 		} else {
 			this._finishDrag();
 			this._clearOutlines();
+			this._clearSelection();
+			this._removeDeleteToolbar();
 			this._removeInsertPreview();
+			this._removeActionBar();
 			document.documentElement.removeAttribute('data-vscode-layout-edit');
 			this._pageStyle?.remove();
 			this._pageStyle = undefined;
@@ -2154,12 +2264,53 @@ class HtmlLayoutEditBridge {
 		}
 	}
 
+	hasChanges(): boolean {
+		if (!this._active) {
+			return false;
+		}
+		const root = htmlLayoutActiveSlideRoot();
+		for (const grid of root.querySelectorAll('[data-dc-grid]')) {
+			if (!(grid instanceof HTMLElement)) {
+				continue;
+			}
+			const snapshot = this._snapshots.get(grid);
+			if (!snapshot) {
+				return true;
+			}
+			if (!htmlLayoutSnapshotsEqual(snapshot, htmlLayoutSnapshotContainer(grid))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	getSavePayload(): IHtmlLayoutSavePayload | null {
+		if (!this._active || !this.hasChanges()) {
+			return null;
+		}
+		const main = htmlLayoutSaveRoot();
+		if (!main) {
+			return null;
+		}
+		const domPath = htmlLayoutDomPathForSaveTarget(main);
+		if (!domPath) {
+			return null;
+		}
+		const clone = main.cloneNode(true) as HTMLElement;
+		htmlLayoutStripRuntimeAttributes(clone);
+		return { domPath, replaceOuterHtml: clone.outerHTML };
+	}
+
 	handlePointerDown(event: PointerEvent): boolean {
 		if (!this._active || event.button !== 0) {
 			return false;
 		}
+		if (this._isLayoutUiTarget(event.target)) {
+			return false;
+		}
 		const gap = htmlLayoutHitTestGapForResize(event.clientX, event.clientY);
 		if (gap) {
+			this._clearSelection();
 			this._drag = {
 				kind: 'resize',
 				pointerId: event.pointerId,
@@ -2175,8 +2326,10 @@ class HtmlLayoutEditBridge {
 		}
 		const card = htmlLayoutFindCardAt(event.clientX, event.clientY);
 		if (!card) {
+			this._clearSelection();
 			return false;
 		}
+		this._clearSelection();
 		this._drag = {
 			kind: 'insert',
 			pointerId: event.pointerId,
@@ -2214,10 +2367,20 @@ class HtmlLayoutEditBridge {
 		if (!this._drag || event.pointerId !== this._drag.pointerId) {
 			return false;
 		}
+		let cardToSelect: HTMLElement | undefined;
 		if (this._drag.kind === 'insert') {
-			this._commitCardInsert(event.clientX, event.clientY);
+			const dx = event.clientX - this._drag.startX;
+			const dy = event.clientY - this._drag.startY;
+			if (dx * dx + dy * dy <= HTML_LAYOUT_SELECT_DRAG_THRESHOLD_SQ) {
+				cardToSelect = this._drag.card;
+			} else {
+				this._commitCardInsert(event.clientX, event.clientY);
+			}
 		}
 		this._finishDrag();
+		if (cardToSelect) {
+			this._selectCard(cardToSelect);
+		}
 		this._updateHoverCursor(event.clientX, event.clientY);
 		event.preventDefault();
 		return true;
@@ -2410,28 +2573,20 @@ class HtmlLayoutEditBridge {
 		}
 		if (sourceParent && sourceParent !== subGrid && sourceParent !== parent) {
 			htmlLayoutRetune(sourceParent);
-			this._captureContainer(sourceParent);
 		}
-		this._captureContainer(parent);
-		this._captureContainer(subGrid);
 		this._collapseGridContainers();
 	}
 
 	private _finalizeInsert(sourceParent: HTMLElement, targetContainer: HTMLElement): void {
 		if (sourceParent !== targetContainer) {
 			htmlLayoutRetune(sourceParent);
-			this._captureContainer(sourceParent);
 		}
 		htmlLayoutRetune(targetContainer);
-		this._captureContainer(targetContainer);
 		this._collapseGridContainers();
 	}
 
 	private _collapseGridContainers(): void {
-		const affected = htmlLayoutCollapseGridContainers(htmlLayoutActiveSlideRoot());
-		for (const container of affected) {
-			this._captureContainer(container);
-		}
+		htmlLayoutCollapseGridContainers(htmlLayoutActiveSlideRoot());
 	}
 
 	private _finishDrag(): void {
@@ -2523,7 +2678,11 @@ class HtmlLayoutEditBridge {
 			element.style.outline = `2px solid ${color}`;
 			element.style.outlineOffset = '-2px';
 			this._outlineTargets.add(element);
+			return;
 		}
+		element.style.removeProperty('outline');
+		element.style.removeProperty('outline-offset');
+		this._outlineTargets.delete(element);
 	}
 
 	private _clearOutlines(): void {
@@ -2570,9 +2729,297 @@ class HtmlLayoutEditBridge {
 				outline: 1px dashed color-mix(in srgb, #0078d4 55%, transparent) !important;
 				outline-offset: -1px;
 			}
+			#vscode-html-layout-action-bar {
+				position: fixed;
+				top: 12px;
+				right: 12px;
+				z-index: 2147483647;
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				gap: 6px;
+				box-sizing: border-box;
+				padding: 4px;
+				border-radius: 6px;
+				border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+				background-color: var(--vscode-widget-background, rgba(255, 255, 255, 0.96));
+				color: var(--vscode-widget-foreground, #333);
+				box-shadow: var(--vscode-widget-shadow, 0 2px 8px rgba(0, 0, 0, 0.16));
+				pointer-events: auto;
+				font: 12px/1.4 var(--vscode-font-family, system-ui, sans-serif);
+			}
+			#vscode-html-layout-action-bar button {
+				box-sizing: border-box;
+				min-width: 56px;
+				padding: 4px 12px;
+				border-radius: 4px;
+				border: 1px solid transparent;
+				font: inherit;
+				cursor: pointer;
+			}
+			#vscode-html-layout-action-bar button[data-kind="secondary"] {
+				background: transparent;
+				border-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+				color: inherit;
+			}
+			#vscode-html-layout-action-bar button[data-kind="primary"] {
+				background: var(--vscode-button-background, #0078d4);
+				color: var(--vscode-button-foreground, #fff);
+			}
+			#vscode-html-layout-action-bar button:disabled {
+				opacity: 0.5;
+				cursor: default;
+			}
+			#vscode-html-layout-delete-toolbar {
+				position: fixed;
+				z-index: 2147483647;
+				display: none;
+				pointer-events: none;
+			}
+			#vscode-html-layout-delete-toolbar button {
+				display: grid;
+				place-items: center;
+				box-sizing: border-box;
+				width: 26px;
+				height: 26px;
+				padding: 0;
+				border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+				border-radius: 6px;
+				background-color: var(--vscode-widget-background, rgba(255, 255, 255, 0.96));
+				color: var(--vscode-foreground, #333);
+				box-shadow: var(--vscode-widget-shadow, 0 2px 8px rgba(0, 0, 0, 0.16));
+				cursor: pointer;
+				pointer-events: auto;
+			}
+			#vscode-html-layout-delete-toolbar button:hover {
+				background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+				color: var(--vscode-errorForeground, #f14c4c);
+			}
+			#vscode-html-layout-delete-toolbar button:focus-visible {
+				outline: 2px solid var(--vscode-focusBorder, #0078d4);
+				outline-offset: 1px;
+			}
+			#vscode-html-layout-delete-toolbar svg {
+				display: block;
+				width: 16px;
+				height: 16px;
+				fill: currentColor;
+			}
 		`;
 		document.head.appendChild(style);
 		this._pageStyle = style;
+	}
+
+	private _ensureActionBar(): void {
+		if (this._actionBar) {
+			return;
+		}
+		const bar = document.createElement('div');
+		bar.id = 'vscode-html-layout-action-bar';
+
+		const cancelButton = document.createElement('button');
+		cancelButton.type = 'button';
+		cancelButton.dataset.kind = 'secondary';
+		cancelButton.textContent = localizedStrings.htmlLayoutCancel;
+		cancelButton.addEventListener('pointerdown', event => {
+			event.stopPropagation();
+		});
+		cancelButton.addEventListener('click', event => {
+			event.stopPropagation();
+			this._callbacks.onCancel();
+		});
+
+		const saveButton = document.createElement('button');
+		saveButton.type = 'button';
+		saveButton.dataset.kind = 'primary';
+		saveButton.textContent = localizedStrings.htmlLayoutSave;
+		saveButton.addEventListener('pointerdown', event => {
+			event.stopPropagation();
+		});
+		saveButton.addEventListener('click', event => {
+			event.stopPropagation();
+			this._callbacks.onSave();
+		});
+
+		bar.appendChild(cancelButton);
+		bar.appendChild(saveButton);
+		document.body.appendChild(bar);
+
+		this._actionBar = bar;
+		this._cancelButton = cancelButton;
+		this._saveButton = saveButton;
+		this._applyActionBarTheme();
+	}
+
+	private _removeActionBar(): void {
+		this._actionBar?.remove();
+		this._actionBar = undefined;
+		this._cancelButton = undefined;
+		this._saveButton = undefined;
+	}
+
+	private _isLayoutUiTarget(target: EventTarget | null): boolean {
+		if (!(target instanceof Node)) {
+			return false;
+		}
+		return !!(
+			(this._actionBar && this._actionBar.contains(target))
+			|| (this._deleteToolbar && this._deleteToolbar.contains(target))
+		);
+	}
+
+	private _selectCard(card: HTMLElement | undefined): void {
+		if (!card || !this._active) {
+			this._clearSelection();
+			return;
+		}
+		if (this._selectedCard === card) {
+			this._syncDeleteToolbarPosition();
+			return;
+		}
+		this._clearSelection();
+		this._selectedCard = card;
+		this._setOutline(card, HTML_LAYOUT_EDIT_OUTLINE_SELECTED);
+		this._ensureDeleteToolbar();
+		this._syncDeleteToolbarPosition();
+		this._attachSelectionSyncListeners();
+	}
+
+	private _clearSelection(): void {
+		if (this._selectedCard) {
+			this._setOutline(this._selectedCard, undefined);
+		}
+		this._selectedCard = undefined;
+		this._hideDeleteToolbar();
+		this._detachSelectionSyncListeners();
+	}
+
+	private _deleteSelectedCard(): void {
+		const card = this._selectedCard;
+		if (!card || !this._active || htmlLayoutIsSlideRootGrid(card)) {
+			return;
+		}
+		const parent = card.parentElement;
+		if (!parent || !htmlLayoutIsGridContainer(parent)) {
+			return;
+		}
+		this._clearSelection();
+		card.remove();
+		htmlLayoutRetune(parent);
+		this._collapseGridContainers();
+	}
+
+	private _ensureDeleteToolbar(): void {
+		if (this._deleteToolbar) {
+			this._deleteToolbar.style.display = 'block';
+			return;
+		}
+		const toolbar = document.createElement('div');
+		toolbar.id = 'vscode-html-layout-delete-toolbar';
+
+		const deleteButton = document.createElement('button');
+		deleteButton.type = 'button';
+		deleteButton.title = localizedStrings.htmlLayoutDelete;
+		deleteButton.setAttribute('aria-label', localizedStrings.htmlLayoutDelete);
+		deleteButton.addEventListener('pointerdown', event => {
+			event.stopPropagation();
+		});
+		deleteButton.addEventListener('click', event => {
+			event.stopPropagation();
+			this._deleteSelectedCard();
+		});
+
+		const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		icon.setAttribute('viewBox', '0 0 16 16');
+		icon.setAttribute('fill', 'currentColor');
+		icon.setAttribute('aria-hidden', 'true');
+		const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+		iconPath.setAttribute('d', HTML_LAYOUT_TRASH_ICON_PATH);
+		icon.appendChild(iconPath);
+		deleteButton.appendChild(icon);
+
+		toolbar.appendChild(deleteButton);
+		document.body.appendChild(toolbar);
+
+		this._deleteToolbar = toolbar;
+		this._deleteButton = deleteButton;
+		this._applyDeleteToolbarTheme();
+	}
+
+	private _hideDeleteToolbar(): void {
+		if (this._deleteToolbar) {
+			this._deleteToolbar.style.display = 'none';
+		}
+	}
+
+	private _removeDeleteToolbar(): void {
+		this._deleteToolbar?.remove();
+		this._deleteToolbar = undefined;
+		this._deleteButton = undefined;
+	}
+
+	private _syncDeleteToolbarPosition(): void {
+		const card = this._selectedCard;
+		const toolbar = this._deleteToolbar;
+		if (!card || !toolbar || !card.isConnected) {
+			this._clearSelection();
+			return;
+		}
+		toolbar.style.display = 'block';
+		const rect = card.getBoundingClientRect();
+		toolbar.style.top = `${Math.max(rect.top + 4, 4)}px`;
+		toolbar.style.left = `${rect.right - 4}px`;
+		toolbar.style.transform = 'translate(-100%, 0)';
+	}
+
+	private _onSelectionSync = (): void => {
+		this._syncDeleteToolbarPosition();
+	};
+
+	private _attachSelectionSyncListeners(): void {
+		if (this._selectionSyncListenersAttached) {
+			return;
+		}
+		window.addEventListener('scroll', this._onSelectionSync, true);
+		window.addEventListener('resize', this._onSelectionSync);
+		this._selectionSyncListenersAttached = true;
+	}
+
+	private _detachSelectionSyncListeners(): void {
+		if (!this._selectionSyncListenersAttached) {
+			return;
+		}
+		window.removeEventListener('scroll', this._onSelectionSync, true);
+		window.removeEventListener('resize', this._onSelectionSync);
+		this._selectionSyncListenersAttached = false;
+	}
+
+	private _applyActionBarTheme(): void {
+		if (!this._actionBar) {
+			return;
+		}
+		const theme = this._theme;
+		const host = this._actionBar;
+		host.style.setProperty('--vscode-widget-background', theme?.widgetBackground ?? null);
+		host.style.setProperty('--vscode-widget-foreground', theme?.widgetForeground ?? null);
+		host.style.setProperty('--vscode-widget-border', theme?.widgetBorder ?? null);
+		host.style.setProperty('--vscode-widget-shadow', theme?.widgetShadow ?? null);
+		host.style.setProperty('--vscode-button-background', theme?.buttonBackground ?? null);
+		host.style.setProperty('--vscode-button-foreground', theme?.buttonForeground ?? null);
+		host.style.setProperty('--vscode-font-family', theme?.font ?? null);
+	}
+
+	private _applyDeleteToolbarTheme(): void {
+		if (!this._deleteButton) {
+			return;
+		}
+		const theme = this._theme;
+		const host = this._deleteButton;
+		host.style.setProperty('--vscode-widget-background', theme?.widgetBackground ?? null);
+		host.style.setProperty('--vscode-foreground', theme?.widgetForeground ?? null);
+		host.style.setProperty('--vscode-widget-border', theme?.widgetBorder ?? null);
+		host.style.setProperty('--vscode-widget-shadow', theme?.widgetShadow ?? null);
+		host.style.setProperty('--vscode-toolbar-hoverBackground', theme?.toolbarHoverBackground ?? null);
 	}
 }
 

@@ -412,6 +412,8 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly onDidChangeAreaSelectionActive: Event<boolean>;
 	readonly onDidChangeEditModeActive: Event<boolean>;
 	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit>;
+	readonly onDidRequestHtmlLayoutSave: Event<void>;
+	readonly onDidRequestHtmlLayoutCancel: Event<void>;
 	readonly onDidChangeContentFullscreenActive: Event<boolean>;
 	readonly onDidChangeDevice: Event<IBrowserDeviceProfile | undefined>;
 	readonly onDidChangeRemoteStatus: Event<boolean>;
@@ -446,6 +448,9 @@ export interface IBrowserViewModel extends IDisposable {
 	toggleAreaSelection(enabled?: boolean): Promise<void>;
 	toggleEditMode(enabled?: boolean): Promise<void>;
 	setHtmlLayoutMode(active: boolean): Promise<void>;
+	getHtmlLayoutSavePayload(): Promise<import('../../../../platform/browserView/common/browserView.js').IHtmlLayoutSavePayload | null>;
+	hasHtmlLayoutChanges(): Promise<boolean>;
+	restoreHtmlLayoutDefaults(): Promise<void>;
 	applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void>;
 	reselectElementByDomPath(domPath: string): Promise<void>;
 	getDcAnnotatedTemplate(componentName: string): Promise<string | null>;
@@ -917,6 +922,18 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.setHtmlLayoutMode(this.id, active);
 	}
 
+	async getHtmlLayoutSavePayload() {
+		return this.browserViewService.getHtmlLayoutSavePayload(this.id);
+	}
+
+	async hasHtmlLayoutChanges(): Promise<boolean> {
+		return this.browserViewService.hasHtmlLayoutChanges(this.id);
+	}
+
+	async restoreHtmlLayoutDefaults(): Promise<void> {
+		return this.browserViewService.restoreHtmlLayoutDefaults(this.id);
+	}
+
 	async applyHtmlEditPreview(preview: IBrowserHtmlEditPreview): Promise<void> {
 		return this.browserViewService.applyHtmlEditPreview(this.id, preview);
 	}
@@ -971,6 +988,14 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 
 	get onDidCommitHtmlEditText(): Event<IBrowserHtmlEditTextCommit> {
 		return this.browserViewService.onDynamicDidCommitHtmlEditText(this.id);
+	}
+
+	get onDidRequestHtmlLayoutSave(): Event<void> {
+		return this.browserViewService.onDynamicDidRequestHtmlLayoutSave(this.id);
+	}
+
+	get onDidRequestHtmlLayoutCancel(): Event<void> {
+		return this.browserViewService.onDynamicDidRequestHtmlLayoutCancel(this.id);
 	}
 
 	get onDidChangeContentFullscreenActive(): Event<boolean> {

@@ -11,6 +11,12 @@ const browserViewLabels: MiniI18nTable<
 	| 'stopHtmlLayoutMode'
 	| 'editModeActive'
 	| 'htmlLayoutModeActive'
+	| 'htmlLayoutSaveSource'
+	| 'htmlLayoutCancel'
+	| 'htmlLayoutSave'
+	| 'htmlLayoutSaveUnavailable'
+	| 'htmlLayoutSaveNoChanges'
+	| 'htmlLayoutSaveFailed'
 	| 'htmlEditAvailable'
 	| 'htmlEditSaveSource'
 	| 'newTab'
@@ -100,6 +106,7 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditUndo'
 	| 'htmlEditRedo'
 	| 'htmlEditDelete'
+	| 'htmlEditCancel'
 	| 'htmlEditSave'
 	| 'htmlEditSaveNoSelection'
 	| 'htmlEditSaveNoChanges'
@@ -136,6 +143,12 @@ const browserViewLabels: MiniI18nTable<
 	stopHtmlLayoutMode: { en: 'Stop Layout Mode', 'zh-cn': '\u505C\u6B62\u5E03\u5C40\u6A21\u5F0F', 'zh-Hans': '\u505C\u6B62\u5E03\u5C40\u6A21\u5F0F' },
 	editModeActive: { en: 'Whether in-page edit mode is active', 'zh-cn': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001', 'zh-Hans': '\u9875\u5185\u7F16\u8F91\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001' },
 	htmlLayoutModeActive: { en: 'Whether in-page grid layout mode is active', 'zh-cn': '\u9875\u5185\u5E03\u5C40\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001', 'zh-Hans': '\u9875\u5185\u5E03\u5C40\u6A21\u5F0F\u662F\u5426\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001' },
+	htmlLayoutSaveSource: { en: 'Browser HTML Layout', 'zh-cn': '\u6D4F\u89C8\u5668 HTML \u5E03\u5C40', 'zh-Hans': '\u6D4F\u89C8\u5668 HTML \u5E03\u5C40' },
+	htmlLayoutCancel: { en: 'Cancel', 'zh-cn': '\u53D6\u6D88', 'zh-Hans': '\u53D6\u6D88' },
+	htmlLayoutSave: { en: 'Save', 'zh-cn': '\u4FDD\u5B58', 'zh-Hans': '\u4FDD\u5B58' },
+	htmlLayoutSaveUnavailable: { en: 'Layout save is only available for associated HTML files.', 'zh-cn': '\u4EC5\u5173\u8054\u7684 HTML \u6587\u4EF6\u53EF\u4FDD\u5B58\u5E03\u5C40\u3002', 'zh-Hans': '\u4EC5\u5173\u8054\u7684 HTML \u6587\u4EF6\u53EF\u4FDD\u5B58\u5E03\u5C40\u3002' },
+	htmlLayoutSaveNoChanges: { en: 'No layout changes to save.', 'zh-cn': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u5E03\u5C40\u66F4\u6539\u3002', 'zh-Hans': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u5E03\u5C40\u66F4\u6539\u3002' },
+	htmlLayoutSaveFailed: { en: 'Could not save layout changes.', 'zh-cn': '\u65E0\u6CD5\u4FDD\u5B58\u5E03\u5C40\u66F4\u6539\u3002', 'zh-Hans': '\u65E0\u6CD5\u4FDD\u5B58\u5E03\u5C40\u66F4\u6539\u3002' },
 	htmlEditAvailable: { en: 'Whether HTML visual edit mode is available for the current browser tab', 'zh-cn': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F', 'zh-Hans': '\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u662F\u5426\u53EF\u7528 HTML \u53EF\u89C6\u5316\u7F16\u8F91\u6A21\u5F0F' },
 	htmlEditSaveSource: { en: 'Browser HTML Edit', 'zh-cn': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91', 'zh-Hans': '\u6D4F\u89C8\u5668 HTML \u7F16\u8F91' },
 	newTab: { en: 'New Tab', 'zh-cn': '\u65B0\u5EFA\u6807\u7B7E\u9875', 'zh-Hans': '\u65B0\u5EFA\u6807\u7B7E\u9875' },
@@ -225,6 +238,7 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditUndo: { en: 'Undo', 'zh-cn': '\u64A4\u9500', 'zh-Hans': '\u64A4\u9500' },
 	htmlEditRedo: { en: 'Redo', 'zh-cn': '\u91CD\u505A', 'zh-Hans': '\u91CD\u505A' },
 	htmlEditDelete: { en: 'Delete element', 'zh-cn': '\u5220\u9664\u5143\u7D20', 'zh-Hans': '\u5220\u9664\u5143\u7D20' },
+	htmlEditCancel: { en: 'Cancel', 'zh-cn': '\u53D6\u6D88', 'zh-Hans': '\u53D6\u6D88' },
 	htmlEditSave: { en: 'Save to File', 'zh-cn': '\u4FDD\u5B58\u5230\u6587\u4EF6', 'zh-Hans': '\u4FDD\u5B58\u5230\u6587\u4EF6' },
 	htmlEditSaveNoSelection: { en: 'Select an element before saving.', 'zh-cn': '\u4FDD\u5B58\u524D\u8BF7\u5148\u9009\u62E9\u4E00\u4E2A\u5143\u7D20\u3002', 'zh-Hans': '\u4FDD\u5B58\u524D\u8BF7\u5148\u9009\u62E9\u4E00\u4E2A\u5143\u7D20\u3002' },
 	htmlEditSaveNoChanges: { en: 'No changes to save.', 'zh-cn': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u66F4\u6539\u3002', 'zh-Hans': '\u6CA1\u6709\u53EF\u4FDD\u5B58\u7684\u66F4\u6539\u3002' },

@@ -146,6 +146,11 @@ export interface IBrowserHtmlEditTextCommit {
 	readonly value: string;
 }
 
+export interface IHtmlLayoutSavePayload {
+	readonly domPath: string;
+	readonly replaceOuterHtml: string;
+}
+
 export interface IBrowserViewRect {
 	readonly x: number;
 	readonly y: number;
@@ -162,6 +167,9 @@ export interface IBrowserViewPreloadLocalizedStrings {
 	readonly emptyElementComment: string;
 	readonly removeComment: string;
 	readonly removeElementComment: string;
+	readonly htmlLayoutSave: string;
+	readonly htmlLayoutCancel: string;
+	readonly htmlLayoutDelete: string;
 }
 
 export interface IBrowserViewTheme {
@@ -562,6 +570,8 @@ export interface IBrowserViewService {
 	onDynamicDidChangeAreaSelectionActive(id: string): Event<boolean>;
 	onDynamicDidChangeEditModeActive(id: string): Event<boolean>;
 	onDynamicDidCommitHtmlEditText(id: string): Event<IBrowserHtmlEditTextCommit>;
+	onDynamicDidRequestHtmlLayoutSave(id: string): Event<void>;
+	onDynamicDidRequestHtmlLayoutCancel(id: string): Event<void>;
 	onDynamicDidChangeContentFullscreenActive(id: string): Event<boolean>;
 	onDynamicDidChangeDeviceEmulation(id: string): Event<IBrowserDeviceProfile | undefined>;
 	onDynamicDidChangeRemoteStatus(id: string): Event<boolean>;
@@ -834,6 +844,12 @@ export interface IBrowserViewService {
 	 * Toggle in-page grid layout edit mode (gap resize and card insert) for DC grid containers.
 	 */
 	setHtmlLayoutMode(id: string, active: boolean): Promise<void>;
+
+	getHtmlLayoutSavePayload(id: string): Promise<IHtmlLayoutSavePayload | null>;
+
+	hasHtmlLayoutChanges(id: string): Promise<boolean>;
+
+	restoreHtmlLayoutDefaults(id: string): Promise<void>;
 
 	/**
 	 * Apply live HTML edit preview updates to the in-page DOM (styles, text, attributes).

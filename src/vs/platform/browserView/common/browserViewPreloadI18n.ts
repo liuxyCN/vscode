@@ -15,6 +15,9 @@ const browserViewPreloadLabels = {
 	emptyElementComment: { en: 'Empty element comment {0}', 'zh-cn': '\u7A7A\u5143\u7D20\u8BC4\u8BBA {0}', 'zh-Hans': '\u7A7A\u5143\u7D20\u8BC4\u8BBA {0}' },
 	removeComment: { en: 'Remove Comment', 'zh-cn': '\u79FB\u9664\u8BC4\u8BBA', 'zh-Hans': '\u79FB\u9664\u8BC4\u8BBA' },
 	removeElementComment: { en: 'Remove element comment', 'zh-cn': '\u79FB\u9664\u5143\u7D20\u8BC4\u8BBA', 'zh-Hans': '\u79FB\u9664\u5143\u7D20\u8BC4\u8BBA' },
+	htmlLayoutSave: { en: 'Save', 'zh-cn': '\u4FDD\u5B58', 'zh-Hans': '\u4FDD\u5B58' },
+	htmlLayoutCancel: { en: 'Cancel', 'zh-cn': '\u53D6\u6D88', 'zh-Hans': '\u53D6\u6D88' },
+	htmlLayoutDelete: { en: 'Delete element', 'zh-cn': '\u5220\u9664\u5143\u7D20', 'zh-Hans': '\u5220\u9664\u5143\u7D20' },
 } satisfies MiniI18nTable<keyof IBrowserViewPreloadLocalizedStrings>;
 
 type BrowserViewPreloadLabelKey = keyof typeof browserViewPreloadLabels;
@@ -33,5 +36,8 @@ export function createBrowserViewPreloadLocalizedStrings(): IBrowserViewPreloadL
 		emptyElementComment: browserViewPreloadLabel('emptyElementComment', 'Empty element comment {0}'),
 		removeComment: browserViewPreloadLabel('removeComment', 'Remove Comment'),
 		removeElementComment: browserViewPreloadLabel('removeElementComment', 'Remove element comment'),
+		htmlLayoutSave: browserViewPreloadLabel('htmlLayoutSave', 'Save'),
+		htmlLayoutCancel: browserViewPreloadLabel('htmlLayoutCancel', 'Cancel'),
+		htmlLayoutDelete: browserViewPreloadLabel('htmlLayoutDelete', 'Delete element'),
 	};
 }

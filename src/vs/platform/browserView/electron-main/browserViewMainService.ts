@@ -381,6 +381,18 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this._getBrowserView(id).inspector.setHtmlLayoutMode(active);
 	}
 
+	async getHtmlLayoutSavePayload(id: string) {
+		return this._getBrowserView(id).getHtmlLayoutSavePayload();
+	}
+
+	async hasHtmlLayoutChanges(id: string): Promise<boolean> {
+		return this._getBrowserView(id).hasHtmlLayoutChanges();
+	}
+
+	async restoreHtmlLayoutDefaults(id: string): Promise<void> {
+		return this._getBrowserView(id).restoreHtmlLayoutDefaults();
+	}
+
 	async applyHtmlEditPreview(id: string, preview: IBrowserHtmlEditPreview): Promise<void> {
 		return this._getBrowserView(id).inspector.applyHtmlEditPreview(preview);
 	}
@@ -407,6 +419,14 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	onDynamicDidCommitHtmlEditText(id: string) {
 		return this._getBrowserView(id).inspector.onDidCommitHtmlEditText;
+	}
+
+	onDynamicDidRequestHtmlLayoutSave(id: string) {
+		return this._getBrowserView(id).inspector.onDidRequestHtmlLayoutSave;
+	}
+
+	onDynamicDidRequestHtmlLayoutCancel(id: string) {
+		return this._getBrowserView(id).inspector.onDidRequestHtmlLayoutCancel;
 	}
 
 	async toggleContentFullscreen(id: string, enabled?: boolean): Promise<void> {

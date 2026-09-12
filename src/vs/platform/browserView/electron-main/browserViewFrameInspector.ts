@@ -122,6 +122,12 @@ export class BrowserViewFrameInspector extends Disposable {
 	private readonly _onDidCommitHtmlEditText = this._register(new Emitter<IBrowserHtmlEditTextCommit>());
 	readonly onDidCommitHtmlEditText: Event<IBrowserHtmlEditTextCommit> = this._onDidCommitHtmlEditText.event;
 
+	private readonly _onDidRequestHtmlLayoutSave = this._register(new Emitter<void>());
+	readonly onDidRequestHtmlLayoutSave: Event<void> = this._onDidRequestHtmlLayoutSave.event;
+
+	private readonly _onDidRequestHtmlLayoutCancel = this._register(new Emitter<void>());
+	readonly onDidRequestHtmlLayoutCancel: Event<void> = this._onDidRequestHtmlLayoutCancel.event;
+
 	private _isPaused = false;
 	private readonly _activeInspection = this._register(new MutableDisposable<IActiveInspection>());
 
@@ -244,6 +250,22 @@ export class BrowserViewFrameInspector extends Disposable {
 		};
 		frame.ipc.on('vscode:browserView:htmlEditTextCommit', onHtmlEditTextCommit);
 		this._register({ dispose: () => frame.ipc.removeListener('vscode:browserView:htmlEditTextCommit', onHtmlEditTextCommit) });
+
+		const onHtmlLayoutSave = (event: Electron.IpcMainEvent) => {
+			if (event.senderFrame === this.frame) {
+				this._onDidRequestHtmlLayoutSave.fire();
+			}
+		};
+		frame.ipc.on('vscode:browserView:htmlLayoutSave', onHtmlLayoutSave);
+		this._register({ dispose: () => frame.ipc.removeListener('vscode:browserView:htmlLayoutSave', onHtmlLayoutSave) });
+
+		const onHtmlLayoutCancel = (event: Electron.IpcMainEvent) => {
+			if (event.senderFrame === this.frame) {
+				this._onDidRequestHtmlLayoutCancel.fire();
+			}
+		};
+		frame.ipc.on('vscode:browserView:htmlLayoutCancel', onHtmlLayoutCancel);
+		this._register({ dispose: () => frame.ipc.removeListener('vscode:browserView:htmlLayoutCancel', onHtmlLayoutCancel) });
 
 		this._enableDomains().catch(() => { });
 	}
