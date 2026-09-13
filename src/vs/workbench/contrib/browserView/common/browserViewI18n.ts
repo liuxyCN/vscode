@@ -126,6 +126,15 @@ const browserViewLabels: MiniI18nTable<
 	| 'htmlEditDcPropsNotFound'
 	| 'browserPageNotFound'
 	| 'browserTabInvalidId'
+	| 'browserTabInvalidUrl'
+	| 'browserTabResourceNavigationError'
+	| 'browserTabNavigationFailed'
+	| 'browserTabNavigationTimedOut'
+	| 'navigateTabCommandDescription'
+	| 'navigateTabArgTabIdDescription'
+	| 'navigateTabArgUrlDescription'
+	| 'reloadTabCommandDescription'
+	| 'reloadTabArgTabIdDescription'
 	| 'captureScreenshotNoActiveBrowser'
 	| 'exportPdf'
 	| 'exportPdfConfirmMessage'
@@ -258,6 +267,15 @@ const browserViewLabels: MiniI18nTable<
 	htmlEditDcPropsNotFound: { en: 'Could not find data-props for this component.', 'zh-cn': '\u627E\u4E0D\u5230\u8BE5\u7EC4\u4EF6\u7684 data-props', 'zh-Hans': '\u627E\u4E0D\u5230\u8BE5\u7EC4\u4EF6\u7684 data-props' },
 	browserPageNotFound: { en: 'No browser page found with ID {0}', 'zh-cn': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762', 'zh-Hans': '\u672A\u627E\u5230 ID \u4E3A {0} \u7684\u6D4F\u89C8\u5668\u9875\u9762' },
 	browserTabInvalidId: { en: 'Browser tab ID must be a non-empty string', 'zh-cn': '\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32', 'zh-Hans': '\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32' },
+	browserTabInvalidUrl: { en: 'Browser navigation URL must be a non-empty string', 'zh-cn': '\u6D4F\u89C8\u5668\u5BFC\u822A URL \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32', 'zh-Hans': '\u6D4F\u89C8\u5668\u5BFC\u822A URL \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32' },
+	browserTabResourceNavigationError: { en: 'This browser page is associated with a resource and cannot be navigated to a different resource. Only query and fragment changes are allowed. Use a different page or open a new one with openBrowserTab.', 'zh-cn': '\u6B64\u6D4F\u89C8\u5668\u9875\u9762\u5173\u8054\u4E86\u8D44\u6E90\uFF0C\u65E0\u6CD5\u5BFC\u822A\u5230\u5176\u4ED6\u8D44\u6E90\u3002\u4EC5\u5141\u8BB8\u66F4\u6539 query \u548C fragment\u3002\u8BF7\u4F7F\u7528\u5176\u4ED6\u9875\u9762\u6216\u901A\u8FC7 openBrowserTab \u6253\u5F00\u65B0\u9875\u9762\u3002', 'zh-Hans': '\u6B64\u6D4F\u89C8\u5668\u9875\u9762\u5173\u8054\u4E86\u8D44\u6E90\uFF0C\u65E0\u6CD5\u5BFC\u822A\u5230\u5176\u4ED6\u8D44\u6E90\u3002\u4EC5\u5141\u8BB8\u66F4\u6539 query \u548C fragment\u3002\u8BF7\u4F7F\u7528\u5176\u4ED6\u9875\u9762\u6216\u901A\u8FC7 openBrowserTab \u6253\u5F00\u65B0\u9875\u9762\u3002' },
+	browserTabNavigationFailed: { en: 'Navigation failed: {0}', 'zh-cn': '\u5BFC\u822A\u5931\u8D25\uFF1A{0}', 'zh-Hans': '\u5BFC\u822A\u5931\u8D25\uFF1A{0}' },
+	browserTabNavigationTimedOut: { en: 'Navigation timed out after {0} ms', 'zh-cn': '\u5BFC\u822A\u5728 {0} \u6BEB\u79D2\u540E\u8D85\u65F6', 'zh-Hans': '\u5BFC\u822A\u5728 {0} \u6BEB\u79D2\u540E\u8D85\u65F6' },
+	navigateTabCommandDescription: { en: 'Navigate an Integrated Browser tab to a URL by its page ID.', 'zh-cn': '\u6309\u9875\u9762 ID \u5C06\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u5BFC\u822A\u5230\u6307\u5B9A URL\u3002', 'zh-Hans': '\u6309\u9875\u9762 ID \u5C06\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u5BFC\u822A\u5230\u6307\u5B9A URL\u3002' },
+	navigateTabArgTabIdDescription: { en: 'Integrated Browser tab ID from vscode.browser.getOpenTabs() or BrowserTab.id.', 'zh-cn': '\u6765\u81EA vscode.browser.getOpenTabs() \u6216 BrowserTab.id \u7684\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID\u3002', 'zh-Hans': '\u6765\u81EA vscode.browser.getOpenTabs() \u6216 BrowserTab.id \u7684\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID\u3002' },
+	navigateTabArgUrlDescription: { en: 'The URL to navigate to.', 'zh-cn': '\u8981\u5BFC\u822A\u5230\u7684 URL\u3002', 'zh-Hans': '\u8981\u5BFC\u822A\u5230\u7684 URL\u3002' },
+	reloadTabCommandDescription: { en: 'Reload an Integrated Browser tab by its page ID.', 'zh-cn': '\u6309\u9875\u9762 ID \u91CD\u65B0\u52A0\u8F7D\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u3002', 'zh-Hans': '\u6309\u9875\u9762 ID \u91CD\u65B0\u52A0\u8F7D\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u3002' },
+	reloadTabArgTabIdDescription: { en: 'Integrated Browser tab ID from vscode.browser.getOpenTabs() or BrowserTab.id.', 'zh-cn': '\u6765\u81EA vscode.browser.getOpenTabs() \u6216 BrowserTab.id \u7684\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID\u3002', 'zh-Hans': '\u6765\u81EA vscode.browser.getOpenTabs() \u6216 BrowserTab.id \u7684\u96C6\u6210\u6D4F\u89C8\u5668\u6807\u7B7E\u9875 ID\u3002' },
 	captureScreenshotNoActiveBrowser: { en: 'No active Integrated Browser editor', 'zh-cn': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668', 'zh-Hans': '\u6CA1\u6709\u6D3B\u52A8\u7684\u96C6\u6210\u6D4F\u89C8\u5668\u7F16\u8F91\u5668' },
 	exportPdf: { en: 'Export PDF', 'zh-cn': '\u5BFC\u51FA PDF', 'zh-Hans': '\u5BFC\u51FA PDF' },
 	exportPdfConfirmMessage: { en: 'Save as PDF?', 'zh-cn': '\u4FDD\u5B58\u4E3A PDF\uFF1F', 'zh-Hans': '\u4FDD\u5B58\u4E3A PDF\uFF1F' },

@@ -35,6 +35,7 @@ import './features/browserDevToolsFeature.js';
 import './features/browserEditorChatFeatures.js';
 import './features/browserCaptureScreenshotFeature.js';
 import './features/browserReloadTabFeature.js';
+import './features/browserNavigateTabFeature.js';
 import './features/browserEditorErrorFeatures.js';
 import './features/browserEditorZoomFeature.js';
 import './features/browserEditorEmulationFeatures.js';

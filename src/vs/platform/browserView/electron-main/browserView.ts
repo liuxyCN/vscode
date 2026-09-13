@@ -7,7 +7,7 @@ import { screen, WebContentsView, webContents } from 'electron';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
-import { IBrowserViewAudience, IBrowserViewBounds, IBrowserViewDevToolsStateEvent, IBrowserViewFocusEvent, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewNavigationEvent, IBrowserViewLoadingEvent, IBrowserViewLoadError, IBrowserViewTitleChangeEvent, IBrowserViewFaviconChangeEvent, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewFindInPageResult, IBrowserViewVisibilityEvent, browserViewIsolatedWorldId, browserZoomFactors, browserZoomDefaultIndex, IBrowserViewOwner, IBrowserViewEditorOpenOptions, IBrowserViewPermissionRequestEvent, equalsBrowserViewAudience, isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience, IHtmlLayoutSavePayload } from '../common/browserView.js';
+import { IBrowserViewAudience, IBrowserViewBounds, IBrowserViewDevToolsStateEvent, IBrowserViewFocusEvent, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewNavigationEvent, IBrowserViewLoadingEvent, IBrowserViewLoadError, IBrowserViewTitleChangeEvent, IBrowserViewFaviconChangeEvent, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewFindInPageResult, IBrowserViewVisibilityEvent, browserViewIsolatedWorldId, browserZoomFactors, browserZoomDefaultIndex, IBrowserViewOwner, IBrowserViewEditorOpenOptions, IBrowserViewPermissionRequestEvent, equalsBrowserViewAudience, isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience, IHtmlLayoutSavePayload, urlsSameExceptFragment, buildHashOnlyNavigationScript } from '../common/browserView.js';
 import { BrowserViewEmulator } from './browserViewEmulator.js';
 import { BrowserViewInspector } from './browserViewInspector.js';
 import { IWindowsMainService } from '../../windows/electron-main/windows.js';
@@ -392,13 +392,9 @@ export class BrowserView extends Disposable {
 				};
 
 				fireLoadingEvent(false);
-				this._onDidNavigate.fire({
-					url: validatedURL,
-					title: '',
-					canGoBack: webContents.navigationHistory.canGoBack(),
-					canGoForward: webContents.navigationHistory.canGoForward(),
-					certificateError: this.session.trust.getCertificateError(validatedURL)
-				});
+				// Keep the committed URL aligned with what is still displayed after a
+				// failed main-frame load (validatedURL is the target, not the document).
+				fireNavigationEvent(webContents.getURL());
 			}
 		});
 		webContents.on('did-finish-load', () => fireLoadingEvent(false));
@@ -836,7 +832,23 @@ export class BrowserView extends Disposable {
 		// Wait for the tunnel proxy (if any) to be applied so the navigation
 		// and the requests it triggers flow through the proxy.
 		await this.session.remote.whenReady;
-		await this._view.webContents.loadURL(url);
+
+		const webContents = this._view.webContents;
+		const currentUrl = webContents.getURL();
+		if (currentUrl && urlsSameExceptFragment(currentUrl, url)) {
+			// Hash-only navigations are same-document loads: `webContents.loadURL`
+			// updates the workbench URL but may not drive `window.location` / hash
+			// routing in the page. Assign in-page so SPAs, anchors, and deck-stage react.
+			this._lastError = undefined;
+			this._onDidChangeLoadingState.fire({ loading: false, error: undefined });
+			await webContents.executeJavaScript(
+				buildHashOnlyNavigationScript(url, currentUrl),
+				true
+			);
+			return;
+		}
+
+		await webContents.loadURL(url);
 	}
 
 	private _redirectPinnedNavigation(url: string): boolean {

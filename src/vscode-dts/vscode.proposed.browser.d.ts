@@ -51,6 +51,16 @@ declare module 'vscode' {
 
 		/** Close this browser tab. */
 		close(): Thenable<void>;
+
+		/**
+		 * Navigate this browser tab to a URL.
+		 *
+		 * Does not require the tab to be active. For resource-backed tabs (opened from an HTML file),
+		 * only query and fragment changes are allowed.
+		 *
+		 * @param url The URL to navigate to.
+		 */
+		navigate(url: string): Thenable<void>;
 	}
 
 	/**
@@ -128,5 +138,13 @@ declare module 'vscode' {
 		 * @param tabId The tab identifier from {@link getOpenTabs} or {@link BrowserTab.id}.
 		 */
 		export function reloadTab(tabId: string): Thenable<void>;
+
+		/**
+		 * Navigate the Integrated Browser tab with the given {@link BrowserTabInfo.id id}.
+		 *
+		 * @param tabId The tab identifier from {@link getOpenTabs} or {@link BrowserTab.id}.
+		 * @param url The URL to navigate to.
+		 */
+		export function navigateTab(tabId: string, url: string): Thenable<void>;
 	}
 }

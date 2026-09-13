@@ -1150,6 +1150,10 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'browser');
 				return extHostBrowsers.reloadTab(tabId);
 			},
+			navigateTab(tabId: string, url: string) {
+				checkProposedApiEnabled(extension, 'browser');
+				return extHostBrowsers.navigateTab(tabId, url);
+			},
 		};
 
 		// namespace: workspace

@@ -29,6 +29,7 @@ export enum BrowserViewCommandId {
 	Reload = `${commandPrefix}.reload`,
 	HardReload = `${commandPrefix}.hardReload`,
 	ReloadTab = `${commandPrefix}.reloadTab`,
+	NavigateTab = `${commandPrefix}.navigateTab`,
 
 	// Editor actions
 	FocusUrlInput = `${commandPrefix}.focusUrlInput`,
@@ -365,6 +366,53 @@ export function isBrowserViewAssociatedResourceNavigation(associatedResource: UR
 		associatedResource.with({ query: null, fragment: null }),
 		targetResource.with({ query: null, fragment: null })
 	);
+}
+
+/**
+ * Returns true when `first` and `second` refer to the same document (scheme,
+ * host, path, and query match) but may differ in the `#fragment`.
+ */
+export function urlsSameExceptFragment(first: string, second: string): boolean {
+	const a = URL.parse(first);
+	const b = URL.parse(second);
+	if (!a || !b) {
+		return false;
+	}
+	return a.protocol === b.protocol
+		&& a.host === b.host
+		&& a.pathname === b.pathname
+		&& (a.search ?? '') === (b.search ?? '');
+}
+
+/**
+ * JavaScript executed in-page for hash-only navigations. Updates `location`,
+ * notifies hash routers, drives deck-stage slide changes, and scrolls to anchors.
+ */
+export function buildHashOnlyNavigationScript(targetUrl: string, currentUrl: string): string {
+	return `(() => {
+const targetUrl = ${JSON.stringify(targetUrl)};
+const previousUrl = ${JSON.stringify(currentUrl)};
+window.location.href = targetUrl;
+try {
+	window.dispatchEvent(new HashChangeEvent('hashchange', { oldURL: previousUrl, newURL: targetUrl }));
+} catch (e) {}
+try {
+	const hash = new URL(targetUrl).hash;
+	const slideMatch = hash.match(/^#(\\d+)$/);
+	if (slideMatch) {
+		const deck = document.querySelector('deck-stage');
+		if (deck && typeof deck.goTo === 'function') {
+			deck.goTo(parseInt(slideMatch[1], 10) - 1);
+		}
+	} else if (hash.length > 1) {
+		const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+		if (el) {
+			el.scrollIntoView({ block: 'start' });
+		}
+	}
+} catch (e) {}
+return location.href;
+})()`;
 }
 
 /** `applicationSharedStorage` keys this session writes to. Empty for ephemeral sessions. */

@@ -7,6 +7,7 @@ import { CommandsRegistry } from '../../../../../platform/commands/common/comman
 import { BrowserViewCommandId } from '../../../../../platform/browserView/common/browserView.js';
 import { IBrowserViewWorkbenchService } from '../../common/browserView.js';
 import { reloadBrowserTab } from '../../common/browserReloadTab.js';
+import { browserViewLabel } from '../../common/browserViewI18n.js';
 
 CommandsRegistry.registerCommand({
 	id: BrowserViewCommandId.ReloadTab,
@@ -14,12 +15,12 @@ CommandsRegistry.registerCommand({
 		await reloadBrowserTab(accessor.get(IBrowserViewWorkbenchService), tabId);
 	},
 	metadata: {
-		description: 'Reload an Integrated Browser tab by its page ID.',
+		description: browserViewLabel('reloadTabCommandDescription', 'Reload an Integrated Browser tab by its page ID.'),
 		args: [{
 			name: 'tabId',
 			schema: {
 				type: 'string',
-				description: 'Integrated Browser tab ID from vscode.browser.getOpenTabs() or BrowserTab.id.',
+				description: browserViewLabel('reloadTabArgTabIdDescription', 'Integrated Browser tab ID from vscode.browser.getOpenTabs() or BrowserTab.id.'),
 			},
 		}],
 	},

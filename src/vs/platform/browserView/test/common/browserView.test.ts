@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience } from '../../common/browserView.js';
+import { buildHashOnlyNavigationScript, isBrowserViewAssociatedResourceNavigation, matchesBrowserViewAudience, urlsSameExceptFragment } from '../../common/browserView.js';
 
 suite('BrowserView', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -27,6 +27,32 @@ suite('BrowserView', () => {
 			otherFile: false,
 			otherScheme: false
 		});
+	});
+
+	test('buildHashOnlyNavigationScript drives hash routers and deck-stage', () => {
+		const script = buildHashOnlyNavigationScript(
+			'file:///deck.html#2',
+			'file:///deck.html#1',
+		);
+		assert.match(script, /window\.location\.href = "file:\/\/\/deck\.html#2"/);
+		assert.match(script, /HashChangeEvent\('hashchange'/);
+		assert.match(script, /document\.querySelector\('deck-stage'\)/);
+		assert.match(script, /deck\.goTo\(parseInt\(slideMatch\[1\], 10\) - 1\)/);
+	});
+
+	test('urlsSameExceptFragment ignores hash differences only', () => {
+		assert.strictEqual(
+			urlsSameExceptFragment('https://example.com/page?q=1#old', 'https://example.com/page?q=1#new'),
+			true,
+		);
+		assert.strictEqual(
+			urlsSameExceptFragment('https://example.com/page#old', 'https://example.com/other#new'),
+			false,
+		);
+		assert.strictEqual(
+			urlsSameExceptFragment('https://example.com/page?v=1', 'https://example.com/page?v=2'),
+			false,
+		);
 	});
 
 	test('matches audiences against patterns', () => {

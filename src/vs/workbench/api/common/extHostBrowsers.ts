@@ -65,6 +65,9 @@ class ExtHostBrowserTab {
 			},
 			close(): Promise<void> {
 				return that._close();
+			},
+			navigate(url: string): Promise<void> {
+				return that._navigate(url);
 			}
 		};
 	}
@@ -96,6 +99,10 @@ class ExtHostBrowserTab {
 
 	private async _close(): Promise<void> {
 		await this._proxy.$closeBrowserTab(this.id);
+	}
+
+	private async _navigate(url: string): Promise<void> {
+		await this._proxy.$navigateBrowserTab(this.id, url);
 	}
 }
 
@@ -232,6 +239,11 @@ export class ExtHostBrowsers extends Disposable implements ExtHostBrowsersShape 
 	async reloadTab(tabId: string): Promise<void> {
 		// Validation lives in `reloadBrowserTab` on the main thread so that the message is localized.
 		await this._proxy.$reloadBrowserTab(tabId);
+	}
+
+	async navigateTab(tabId: string, url: string): Promise<void> {
+		// Validation lives in `navigateBrowserTab` on the main thread so that the message is localized.
+		await this._proxy.$navigateBrowserTab(tabId, url);
 	}
 
 	// #endregion

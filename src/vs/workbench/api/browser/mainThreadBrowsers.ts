@@ -17,6 +17,9 @@ import { IEditorOptions } from '../../../platform/editor/common/editor.js';
 import { CDPRequest } from '../../../platform/browserView/common/cdp/types.js';
 import { BrowserEditorInput } from '../../contrib/browserView/common/browserEditorInput.js';
 import { reloadBrowserTab } from '../../contrib/browserView/common/browserReloadTab.js';
+import { navigateBrowserTab } from '../../contrib/browserView/common/browserNavigateTab.js';
+import { rewriteRemoteLocalhostUrl } from '../../contrib/browserView/common/browserRemoteLocalhostUrl.js';
+import { IRemoteExplorerService } from '../../services/remote/common/remoteExplorerService.js';
 
 @extHostNamedCustomer(MainContext.MainThreadBrowsers)
 export class MainThreadBrowsers extends Disposable implements MainThreadBrowsersShape {
@@ -33,6 +36,7 @@ export class MainThreadBrowsers extends Disposable implements MainThreadBrowsers
 		@IBrowserViewWorkbenchService private readonly browserViewService: IBrowserViewWorkbenchService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IRemoteExplorerService private readonly remoteExplorerService: IRemoteExplorerService,
 	) {
 		super();
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostBrowsers);
@@ -173,6 +177,11 @@ export class MainThreadBrowsers extends Disposable implements MainThreadBrowsers
 
 	async $reloadBrowserTab(browserId: string): Promise<void> {
 		await reloadBrowserTab(this.browserViewService, browserId);
+	}
+
+	async $navigateBrowserTab(browserId: string, url: string): Promise<void> {
+		const { url: resolvedUrl } = rewriteRemoteLocalhostUrl(url, this.browserViewService, this.remoteExplorerService);
+		await navigateBrowserTab(this.browserViewService, browserId, resolvedUrl);
 	}
 
 	// #endregion

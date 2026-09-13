@@ -293,6 +293,12 @@ export class BrowserNavigationFeatures extends BrowserEditorContribution {
 		this._hasInitiatedNavigation = model.loading;
 		this._updateFromModel(model);
 		store.add(model.onDidNavigate(() => this._updateFromModel(model)));
+		store.add(model.onDidChangeLoadingState(state => {
+			if (!state.loading && state.error) {
+				// Re-sync the address bar when an optimistic preview outlived a failed load.
+				this._navbar.refreshUrl();
+			}
+		}));
 		store.add(model.onWillNavigate(url => {
 			this._hasInitiatedNavigation = true;
 			this._navbar.previewUrl(url);

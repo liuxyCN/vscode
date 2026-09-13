@@ -30,6 +30,7 @@ suite('ExtHostBrowsers', () => {
 		const proxy = new class extends mock<MainThreadBrowsersShape>() {
 			override $openBrowserTab(): Promise<BrowserTabDto> { return Promise.resolve(createDto()); }
 			override $reloadBrowserTab(): Promise<void> { return Promise.resolve(); }
+			override $navigateBrowserTab(): Promise<void> { return Promise.resolve(); }
 			override $startCDPSession(): Promise<void> { return Promise.resolve(); }
 			override $closeCDPSession(): Promise<void> { return Promise.resolve(); }
 			override $sendCDPMessage(): Promise<void> { return Promise.resolve(); }
@@ -312,6 +313,41 @@ suite('ExtHostBrowsers', () => {
 		await extHost.reloadTab('tab-123');
 
 		assert.strictEqual(capturedTabId, 'tab-123');
+	});
+
+	test('navigateTab calls $navigateBrowserTab on proxy', async () => {
+		let capturedTabId: string | undefined;
+		let capturedUrl: string | undefined;
+		const extHost = createExtHostBrowsers({
+			$navigateBrowserTab: (tabId: string, url: string) => {
+				capturedTabId = tabId;
+				capturedUrl = url;
+				return Promise.resolve();
+			},
+		});
+
+		await extHost.navigateTab('tab-456', 'https://example.com/next');
+
+		assert.strictEqual(capturedTabId, 'tab-456');
+		assert.strictEqual(capturedUrl, 'https://example.com/next');
+	});
+
+	test('BrowserTab.navigate calls $navigateBrowserTab on proxy', async () => {
+		let capturedTabId: string | undefined;
+		let capturedUrl: string | undefined;
+		const extHost = createExtHostBrowsers({
+			$navigateBrowserTab: (tabId: string, url: string) => {
+				capturedTabId = tabId;
+				capturedUrl = url;
+				return Promise.resolve();
+			},
+		});
+
+		extHost.$onDidOpenBrowserTab(createDto({ id: 'b1' }));
+		await extHost.browserTabs[0].navigate('https://example.com/target');
+
+		assert.strictEqual(capturedTabId, 'b1');
+		assert.strictEqual(capturedUrl, 'https://example.com/target');
 	});
 
 	test('startCDPSession calls $startCDPSession on proxy', async () => {
