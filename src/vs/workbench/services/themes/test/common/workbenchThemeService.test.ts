@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { migrateThemeSettingsId, ThemeSettingDefaults, ThemeSettings } from '../../common/workbenchThemeService.js';
+import { getNextWelcomeColorThemeSettingsId, migrateThemeSettingsId, ThemeSettingDefaults, ThemeSettings, WELCOME_COLOR_THEME_SETTINGS_IDS } from '../../common/workbenchThemeService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ThemeConfiguration } from '../../common/themeConfiguration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
@@ -43,6 +43,18 @@ suite('WorkbenchThemeService', () => {
 				['Dark Modern', 'Dark 2026', 'Some Custom Theme', ''].map(migrateThemeSettingsId),
 				['Dark Modern', 'Dark 2026', 'Some Custom Theme', '']
 			);
+		});
+	});
+
+	suite('getNextWelcomeColorThemeSettingsId', () => {
+		test('cycles through welcome themes', () => {
+			assert.strictEqual(getNextWelcomeColorThemeSettingsId(WELCOME_COLOR_THEME_SETTINGS_IDS[0]), WELCOME_COLOR_THEME_SETTINGS_IDS[1]);
+			assert.strictEqual(getNextWelcomeColorThemeSettingsId(WELCOME_COLOR_THEME_SETTINGS_IDS[1]), WELCOME_COLOR_THEME_SETTINGS_IDS[2]);
+			assert.strictEqual(getNextWelcomeColorThemeSettingsId(WELCOME_COLOR_THEME_SETTINGS_IDS[2]), WELCOME_COLOR_THEME_SETTINGS_IDS[0]);
+		});
+
+		test('starts at first welcome theme when current theme is not in the list', () => {
+			assert.strictEqual(getNextWelcomeColorThemeSettingsId('Dark Modern'), WELCOME_COLOR_THEME_SETTINGS_IDS[0]);
 		});
 	});
 

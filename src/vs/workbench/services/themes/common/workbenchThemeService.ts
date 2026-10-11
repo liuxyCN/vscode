@@ -48,6 +48,19 @@ export namespace ThemeSettingDefaults {
 	export const PRODUCT_ICON_THEME = 'Default';
 }
 
+/** Welcome page color themes, in title bar cycle order. */
+export const WELCOME_COLOR_THEME_SETTINGS_IDS: readonly string[] = [
+	ThemeSettingDefaults.COLOR_THEME_DARK,
+	'Dark 2026',
+	ThemeSettingDefaults.COLOR_THEME_LIGHT,
+];
+
+export function getNextWelcomeColorThemeSettingsId(currentSettingsId: string): string {
+	const index = WELCOME_COLOR_THEME_SETTINGS_IDS.indexOf(currentSettingsId);
+	const nextIndex = index >= 0 ? (index + 1) % WELCOME_COLOR_THEME_SETTINGS_IDS.length : 0;
+	return WELCOME_COLOR_THEME_SETTINGS_IDS[nextIndex];
+}
+
 /**
  * Migrates legacy theme settings IDs to their current equivalents.
  * Theme IDs were simplified: "Default" prefix was removed from built-in themes,

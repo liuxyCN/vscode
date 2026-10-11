@@ -9,7 +9,11 @@ import { MenuRegistry, MenuId, Action2, registerAction2, ISubmenuItem } from '..
 import { equalsIgnoreCase } from '../../../../base/common/strings.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
-import { IWorkbenchThemeService, IWorkbenchTheme, ThemeSettingTarget, IWorkbenchColorTheme, IWorkbenchFileIconTheme, IWorkbenchProductIconTheme, ThemeSettings, ThemeSettingDefaults } from '../../../services/themes/common/workbenchThemeService.js';
+import { getNextWelcomeColorThemeSettingsId, IWorkbenchThemeService, IWorkbenchTheme, ThemeSettingTarget, IWorkbenchColorTheme, IWorkbenchFileIconTheme, IWorkbenchProductIconTheme, ThemeSettings, ThemeSettingDefaults } from '../../../services/themes/common/workbenchThemeService.js';
+import { alert } from '../../../../base/browser/ui/aria/aria.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
+import { themesActionTitle, themesLabel } from '../common/themesI18n.js';
 import { IExtensionsWorkbenchService } from '../../extensions/common/extensions.js';
 import { IExtensionGalleryService, IExtensionManagementService, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IColorRegistry, Extensions as ColorRegistryExtensions } from '../../../../platform/theme/common/colorRegistry.js';
@@ -33,7 +37,7 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { FileIconThemeData } from '../../../services/themes/browser/fileIconThemeData.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 
@@ -897,6 +901,52 @@ registerAction2(class extends Action2 {
 		const marketplaceThemePicker = instantiationService.createInstance(MarketplaceThemesPicker, getMarketplaceColorThemes, marketplaceTag);
 		await marketplaceThemePicker.openQuickPick('', themeService.getColorTheme(), selectTheme).then(undefined, onUnexpectedError);
 	}
+});
+
+const CycleWelcomeColorThemeCommandId = 'workbench.action.cycleWelcomeColorTheme';
+
+registerAction2(class extends Action2 {
+
+	constructor() {
+		super({
+			id: CycleWelcomeColorThemeCommandId,
+			title: themesActionTitle('cycleWelcomeColorTheme', 'Switch Color Theme'),
+			category: Categories.Preferences,
+			icon: Codicon.colorMode,
+			f1: true,
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const themeService = accessor.get(IWorkbenchThemeService);
+		const nextSettingsId = getNextWelcomeColorThemeSettingsId(themeService.getColorTheme().settingsId);
+		const themes = await themeService.getColorThemes();
+		const match = themes.find(t => t.settingsId === nextSettingsId);
+		if (!match) {
+			return;
+		}
+
+		await themeService.setColorTheme(match.id, ConfigurationTarget.USER);
+		alert(themesLabel('cycleWelcomeColorThemeChanged', 'Color theme changed to {0}', match.label));
+	}
+});
+
+MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
+	command: {
+		id: CycleWelcomeColorThemeCommandId,
+		title: themesLabel('cycleWelcomeColorTheme', 'Switch Color Theme'),
+		icon: Codicon.colorMode,
+	},
+	group: 'navigation',
+	order: -1,
+	when: ContextKeyExpr.and(
+		IsAuxiliaryWindowContext.negate(),
+		ContextKeyExpr.or(
+			ContextKeyExpr.equals('config.workbench.layoutControl.type', 'toggles'),
+			ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both'),
+			ContextKeyExpr.equals('config.workbench.layoutControl.type', 'menu'),
+		)
+	),
 });
 
 const ThemesSubMenu = new MenuId('ThemesSubMenu');
