@@ -50,7 +50,7 @@
 		"build/**/*.js.map": true,
 		"build/**/*.js": {
 			"when": "$(basename).ts"
-		},
+		}
 	},
 	"files.associations": {
 		"cglicenses.json": "jsonc",
@@ -215,5 +215,6 @@
 		".github/skills/.local": true,
 		".agents/skills/.local": true,
 		".claude/skills/.local": true,
-	}
+	},
+	"neontractor-ai.explorer.hideDocumentMarkdownSidecars": false
 }
